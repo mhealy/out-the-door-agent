@@ -7,6 +7,8 @@ from app.domain.vehicle import VehicleListing
 class InventoryProvider(Protocol):
     async def search(self, criteria: VehicleSearchCriteria) -> list[VehicleListing]: ...
 
+    async def get_by_id(self, vehicle_id: str) -> VehicleListing | None: ...
+
 
 FIXTURE_RECORDS = [
     {
@@ -88,6 +90,19 @@ FIXTURE_RECORDS = [
 
 
 class FixtureInventoryProvider:
+    @staticmethod
+    def _listings() -> list[VehicleListing]:
+        return [
+            VehicleListing(source_provider="fixture", **record)
+            for record in FIXTURE_RECORDS
+        ]
+
     async def search(self, criteria: VehicleSearchCriteria) -> list[VehicleListing]:
         del criteria
-        return [VehicleListing(source_provider="fixture", **record) for record in FIXTURE_RECORDS]
+        return self._listings()
+
+    async def get_by_id(self, vehicle_id: str) -> VehicleListing | None:
+        return next(
+            (listing for listing in self._listings() if listing.id == vehicle_id),
+            None,
+        )

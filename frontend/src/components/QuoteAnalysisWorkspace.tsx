@@ -55,10 +55,20 @@ type QuoteExtraction = {
   extraction_confidence: number;
 };
 
+type QuoteAssessment = {
+  comparable: boolean;
+  transparent: boolean;
+  reconciled: boolean | null;
+  missing_for_comparison: string[];
+  missing_for_transparency: string[];
+  reconciliation_difference: string | null;
+};
+
 type QuoteAnalysisResponse = {
   message: DealerMessage;
   extraction: QuoteExtraction;
   evidence: Evidence[];
+  assessment: QuoteAssessment;
 };
 
 type ApiErrorPayload = {
@@ -75,6 +85,21 @@ const dateFormatter = new Intl.DateTimeFormat("en-US", {
   dateStyle: "medium",
   timeStyle: "short",
 });
+
+const requirementLabels: Record<string, string> = {
+  vehicle_identity: "Intended vehicle identity is not established",
+  vehicle_identity_mismatch: "Dealer response references a different vehicle",
+  claimed_otd: "Written out-the-door total",
+  addon_status: "Whether dealer add-ons are mandatory",
+  mandatory_addon_amount: "Mandatory add-on amount",
+  financing_dependency: "Dealer-financing dependency",
+  trade_dependency: "Trade-in dependency",
+  pricing_condition: "Pricing or incentive conditions",
+  selling_price: "Selling price",
+  dealer_fee_detail: "Dealer or documentation fee detail",
+  mandatory_addon_detail: "Mandatory add-on detail",
+  government_fee_detail: "Tax, title, and license detail",
+};
 
 async function apiError(response: Response, fallback: string): Promise<Error> {
   const payload = (await response.json().catch(() => null)) as ApiErrorPayload | null;
@@ -117,6 +142,29 @@ function formatDate(value: string): string {
 function formatRequirement(value: boolean | null): string {
   if (value === null) return "Not stated";
   return value ? "Required" : "Not required";
+}
+
+function formatRequirementLabel(value: string): string {
+  const knownLabel = requirementLabels[value];
+  if (knownLabel) return knownLabel;
+  const words = value.replaceAll("_", " ");
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+function formatDifference(value: string | null): string {
+  if (value === null) return "Not computed";
+  const amount = Number(value);
+  if (!Number.isFinite(amount)) return value;
+  if (amount === 0) return currencyFormatter.format(0);
+  const sign = amount > 0 ? "+" : "−";
+  return `${sign}${currencyFormatter.format(Math.abs(amount))}`;
+}
+
+function assessmentState(value: boolean | null): { label: string; className: string } {
+  if (value === null) return { label: "UNKNOWN", className: "is-unknown" };
+  return value
+    ? { label: "YES", className: "is-yes" }
+    : { label: "NO", className: "is-no" };
 }
 
 function EvidenceLinks({
@@ -266,6 +314,86 @@ function RawDealerMessage({ message }: { message: DealerMessage }) {
   </section>;
 }
 
+function AssessmentResult({ label, value }: { label: string; value: boolean | null }) {
+  const state = assessmentState(value);
+  return <div className="assessment-card">
+    <dt>{label}</dt>
+    <dd className={`assessment-result ${state.className}`}>{state.label}</dd>
+  </div>;
+}
+
+function PolicyRequirements({
+  title,
+  requirements,
+  completeLabel,
+}: {
+  title: string;
+  requirements: string[];
+  completeLabel: string;
+}) {
+  return <section className="policy-group">
+    <h4>{title}</h4>
+    {!requirements.length && <p className="policy-complete">{completeLabel}</p>}
+    {!!requirements.length && <ul className="policy-list">
+      {requirements.map((requirement) => <li key={requirement}>
+        <code>{requirement}</code>
+        <span>{formatRequirementLabel(requirement)}</span>
+      </li>)}
+    </ul>}
+  </section>;
+}
+
+function QuoteAssessmentPanel({ assessment }: { assessment: QuoteAssessment }) {
+  const numericDifference = assessment.reconciliation_difference === null
+    ? null
+    : Number(assessment.reconciliation_difference);
+  const reconciliationDetail = assessment.reconciled === null
+    ? "Known line items are not complete or unambiguous enough for authoritative arithmetic."
+    : assessment.reconciled
+      ? `Known line items reconcile within the $0.01 tolerance (${formatDifference(assessment.reconciliation_difference)}).`
+      : numericDifference !== null && Number.isFinite(numericDifference)
+        ? `Known line items total ${currencyFormatter.format(Math.abs(numericDifference))} ${numericDifference > 0 ? "more" : "less"} than the dealer's claimed OTD.`
+        : "Known line items do not reconcile with the dealer's claimed OTD.";
+
+  return <section className="analysis-panel assessment-panel" aria-labelledby="assessment-heading">
+    <p className="eyebrow">Deterministic assessment</p>
+    <div className="panel-heading">
+      <div>
+        <h3 id="assessment-heading">Is this quote usable?</h3>
+        <p className="assessment-intro">Application policy evaluates three independent dimensions. No score or dealer judgment is inferred.</p>
+      </div>
+    </div>
+
+    <dl className="assessment-grid">
+      <AssessmentResult label="Comparable" value={assessment.comparable} />
+      <AssessmentResult label="Transparent" value={assessment.transparent} />
+      <AssessmentResult label="Reconciled" value={assessment.reconciled} />
+    </dl>
+
+    <div className="policy-grid">
+      <PolicyRequirements
+        title="Missing for comparison"
+        requirements={assessment.missing_for_comparison}
+        completeLabel="No comparison-policy gaps."
+      />
+      <PolicyRequirements
+        title="Missing for transparency"
+        requirements={assessment.missing_for_transparency}
+        completeLabel="No transparency-policy gaps."
+      />
+    </div>
+
+    <section className="reconciliation-detail">
+      <div className="reconciliation-heading">
+        <h4>Arithmetic difference</h4>
+        <strong>{formatDifference(assessment.reconciliation_difference)}</strong>
+      </div>
+      <p>{reconciliationDetail}</p>
+      <p className="formula-note">Difference = computed known line-item total − claimed OTD. Positive means the line items total more; negative means they total less. An absolute difference of $0.01 or less counts as reconciled.</p>
+    </section>
+  </section>;
+}
+
 function StructuredQuote({
   analysis,
   selectedEvidenceId,
@@ -401,8 +529,9 @@ function StructuredQuote({
     </section>
 
     <section className="quote-group questions">
-      <h4>Unresolved questions</h4>
-      {!extraction.unresolved_questions.length && <p className="muted">No unresolved questions extracted.</p>}
+      <h4>Unresolved source uncertainty</h4>
+      <p className="item-detail">These are ambiguities or refusals stated in the dealer source, not application-determined policy gaps.</p>
+      {!extraction.unresolved_questions.length && <p className="muted">No source-grounded uncertainty extracted.</p>}
       {!!extraction.unresolved_questions.length && <ul>
         {extraction.unresolved_questions.map((question) => <li key={question}>{question}</li>)}
       </ul>}
@@ -478,9 +607,9 @@ export function QuoteAnalysisWorkspace({ apiBaseUrl }: { apiBaseUrl: string }) {
 
   return <section className="quote-analysis" aria-labelledby="quote-analysis-heading">
     <p className="eyebrow">Dealer response lab</p>
-    <h2 id="quote-analysis-heading">Inspect what the dealer actually stated</h2>
+    <h2 id="quote-analysis-heading">Extract the facts, then test what is usable</h2>
     <p className="section-summary">
-      Choose a fixture response to extract its pricing, conditions, and open questions. Every sourced claim stays tied to the original message.
+      Choose a fixture response to preserve its source-backed facts, then deterministically assess identity, completeness, transparency, and arithmetic.
     </p>
 
     <form className="quote-analysis-form" onSubmit={submit}>
@@ -506,7 +635,7 @@ export function QuoteAnalysisWorkspace({ apiBaseUrl }: { apiBaseUrl: string }) {
     {fixtures.isError && <p className="error" role="alert">{fixtures.error.message}</p>}
     {fixtures.isSuccess && !fixtures.data.length && <p className="empty-state">No fixture dealer responses are available.</p>}
     {analysis.isError && <p className="error" role="alert">{analysis.error.message}</p>}
-    {analysis.isPending && <p className="analysis-status" role="status">Extracting only source-supported dealer facts…</p>}
+    {analysis.isPending && <p className="analysis-status" role="status">Extracting source-supported facts before deterministic assessment…</p>}
 
     {selectedFixture && !analysis.isSuccess && <div className="analysis-grid">
       <RawDealerMessage message={selectedFixture} />
@@ -515,11 +644,14 @@ export function QuoteAnalysisWorkspace({ apiBaseUrl }: { apiBaseUrl: string }) {
     {analysis.isSuccess && <>
       <div className="analysis-grid">
         <RawDealerMessage message={analysis.data.message} />
-        <StructuredQuote
-          analysis={analysis.data}
-          selectedEvidenceId={selectedEvidenceId}
-          onSelectEvidence={setSelectedEvidenceId}
-        />
+        <div className="analysis-stack">
+          <QuoteAssessmentPanel assessment={analysis.data.assessment} />
+          <StructuredQuote
+            analysis={analysis.data}
+            selectedEvidenceId={selectedEvidenceId}
+            onSelectEvidence={setSelectedEvidenceId}
+          />
+        </div>
       </div>
       {selectedEvidence && <EvidenceDrawer
         evidence={selectedEvidence}

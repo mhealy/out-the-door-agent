@@ -1,14 +1,19 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
-from app.dependencies import get_dealer_message_provider, get_quote_extractor
+from app.dependencies import (
+    get_dealer_message_provider,
+    get_inventory_provider,
+    get_quote_extractor,
+)
 from app.domain.message import DealerMessage
 from app.providers.dealer_messages import (
     DealerMessageNotFoundError,
     DealerMessageProvider,
 )
+from app.providers.inventory import InventoryProvider
 from app.providers.quote_extraction import (
     QuoteExtractionError,
     QuoteExtractor,
@@ -21,14 +26,21 @@ router = APIRouter(prefix="/quotes", tags=["quotes"])
 
 
 class QuoteAnalysisRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     message_id: str = Field(min_length=1)
 
 
 def _service(
     message_provider: DealerMessageProvider,
     quote_extractor: QuoteExtractor,
+    inventory_provider: InventoryProvider,
 ) -> QuoteAnalysisService:
-    return QuoteAnalysisService(message_provider, quote_extractor)
+    return QuoteAnalysisService(
+        message_provider,
+        quote_extractor,
+        inventory_provider,
+    )
 
 
 @router.get("/fixtures", response_model=list[DealerMessage])
@@ -47,11 +59,16 @@ async def analyze_quote(
         DealerMessageProvider, Depends(get_dealer_message_provider)
     ],
     quote_extractor: Annotated[QuoteExtractor, Depends(get_quote_extractor)],
+    inventory_provider: Annotated[
+        InventoryProvider, Depends(get_inventory_provider)
+    ],
 ) -> QuoteAnalysisResult:
     try:
-        return await _service(message_provider, quote_extractor).analyze(
-            request.message_id
-        )
+        return await _service(
+            message_provider,
+            quote_extractor,
+            inventory_provider,
+        ).analyze(request.message_id)
     except DealerMessageNotFoundError as error:
         raise HTTPException(
             status_code=404,

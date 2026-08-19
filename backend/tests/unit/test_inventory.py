@@ -154,3 +154,14 @@ async def test_fixture_provider_normalizes_records() -> None:
     assert all(isinstance(item, VehicleListing) for item in results)
     assert all(item.source_provider == "fixture" for item in results)
     assert all(isinstance(item.advertised_price, Decimal) for item in results)
+
+
+async def test_fixture_provider_resolves_normalized_vehicle_by_id() -> None:
+    provider = FixtureInventoryProvider()
+
+    vehicle = await provider.get_by_id("baytown-blue")
+
+    assert vehicle is not None
+    assert vehicle.vin == "KM8JCDD10SU000001"
+    assert vehicle.stock_number == "B1001"
+    assert await provider.get_by_id("missing-vehicle") is None

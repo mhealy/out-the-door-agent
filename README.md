@@ -1,122 +1,131 @@
 # OutTheDoor
 
-**OutTheDoor** is an agentic AI application that helps vehicle buyers discover, acquire, interpret, and compare real dealership offers.
+OutTheDoor is an agentic AI buyer advocate for vehicle purchasing. It is designed to acquire and interpret written dealer offers, preserve evidence for material financial claims, and compare true out-the-door economics while keeping outbound dealer communication under explicit human control. This repository currently contains the Phase 1 application foundation only.
 
-Rather than relying on advertised prices alone, OutTheDoor is designed to gather transaction-specific evidence such as written out-the-door pricing, dealer fees, mandatory add-ons, conditional incentives, and financing requirements. It then normalizes those offers so a buyer can make an informed, evidence-backed purchasing decision.
+> Screenshot/GIF placeholder — the buyer workspace will be demonstrated after the inventory and quote phases are implemented.
 
-## Why This Exists
-
-Finding vehicle inventory is relatively easy.
-
-Determining what a vehicle will **actually cost** can be much harder.
-
-Dealership quotes may include or omit:
-
-* mandatory dealer-installed products,
-* documentation and dealer fees,
-* financing-dependent discounts,
-* trade-in incentives,
-* loyalty or eligibility-based rebates,
-* taxes, title, and registration,
-* other conditions not reflected in the advertised price.
-
-OutTheDoor explores how an AI agent can reduce that information asymmetry by gathering missing information, interpreting unstructured dealer responses, researching material add-ons, and presenting comparable offers.
-
-## Core Design Principles
-
-* **Evidence over assertion** — important pricing claims should be traceable to their source.
-* **Bounded autonomy** — the agent can research and analyze autonomously, while external dealer communication requires human approval.
-* **Deterministic logic where possible** — calculations, constraints, quote validation, policy, and ranking belong in normal code.
-* **AI where semantics matter** — LLMs are used for natural-language interpretation, quote extraction, conditional-language analysis, research synthesis, and communication.
-* **Observable behavior** — agent actions, decisions, evidence, and workflow state should be visible and auditable.
-* **Measured quality** — AI behavior should be evaluated against representative dealer-response scenarios rather than judged only by demo quality.
-
-## Planned Architecture
+## Architecture
 
 ```text
-React + TypeScript
-        │
-        ▼
-      FastAPI
-        │
-        ▼
-LangGraph Buyer Agent
-   │       │       │
-   ▼       ▼       ▼
-Inventory Messaging Research
-        │
-        ▼
-Structured LLM Operations
-        │
-        ▼
-SQLite + Evidence + Tracing
+React + TypeScript buyer workspace
+              │ REST (SSE in a later phase)
+              ▼
+          FastAPI API
+              │
+       domain / services / providers
+              │
+              ▼
+     SQLAlchemy 2 + SQLite
+
+LangGraph orchestration is intentionally deferred to Phase 4.
 ```
 
-### Planned Stack
+The backend keeps domain contracts, deterministic services, external providers, API routes, orchestration, and persistence in separate packages. Phase 1 implements only the contracts and infrastructure needed for a clean starting point.
 
-**Frontend**
+## Tech stack
 
-* React
-* TypeScript
-* Vite
-* TanStack Query
+- Python 3.12+, FastAPI, Pydantic v2, SQLAlchemy 2, SQLite, pytest
+- React, TypeScript, Vite, TanStack Query
+- LangGraph is part of the planned stack but is not installed or implemented in Phase 1
 
-**Backend**
+## Prerequisites
 
-* Python
-* FastAPI
-* Pydantic
-* SQLAlchemy
-* SQLite
+- Python 3.12 or newer
+- Node.js 20 or newer and npm
 
-**Agentic AI**
+## Setup
 
-* LangGraph
-* Structured LLM outputs
-* Human-in-the-loop approval
+From the repository root, create the backend environment:
 
-**Quality**
-
-* pytest
-* deterministic unit and integration tests
-* AI evaluation fixtures
-
-## Project Status
-
-🚧 **Early development**
-
-The repository is currently being initialized. The first development phase establishes the application foundation, including:
-
-* FastAPI backend
-* React/TypeScript frontend
-* persistence foundation
-* core domain models
-* testing infrastructure
-* local development workflow
-
-Agent workflows and external integrations will be added incrementally after the foundation is stable.
-
-## Repository Structure
-
-The planned top-level structure is:
-
-```text
-out-the-door-agent/
-├── backend/
-├── frontend/
-├── demo/
-├── AGENTS.md
-└── README.md
+```powershell
+cd backend
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+python -m pip install -e ".[dev]"
 ```
 
-Detailed implementation guidance is maintained separately during development.
+Install frontend dependencies:
 
-## Development Philosophy
+```powershell
+cd frontend
+npm install
+```
 
-This project intentionally favors a small, understandable architecture over unnecessary AI or infrastructure complexity.
+Copy `.env.example` to `.env` at the repository root if you want to override defaults. Do not commit `.env` files or credentials.
 
-The goal is not to maximize the number of agents, frameworks, or services. The goal is to build a reliable agentic workflow where AI is used only where it provides meaningful value.
+## Environment variables
 
-## License
+| Variable | Default | Purpose |
+|---|---|---|
+| `OTD_APP_NAME` | `OutTheDoor API` | API display name |
+| `OTD_ENVIRONMENT` | `development` | Runtime environment label |
+| `OTD_DATABASE_URL` | `sqlite:///./out_the_door.db` | SQLAlchemy database URL |
+| `OTD_CORS_ORIGINS` | `["http://localhost:5173"]` | JSON array of allowed origins |
+| `VITE_API_BASE_URL` | `http://localhost:8000` | Future frontend API base URL |
 
-This project is currently private and under development.
+No API keys are required in Phase 1.
+
+## Run locally
+
+Start the backend from `backend/` after activating its virtual environment:
+
+```powershell
+uvicorn app.main:app --reload
+```
+
+The API is available at `http://localhost:8000`; `GET /health` returns `{"status":"ok"}`. The local SQLite schema is created at startup.
+
+Start the frontend from `frontend/` in another terminal:
+
+```powershell
+npm run dev
+```
+
+Vite serves the app at `http://localhost:5173` by default.
+
+Alternatively, Docker users can start both applications from the repository root:
+
+```powershell
+docker compose up --build
+```
+
+## Checks
+
+Run backend tests from `backend/`:
+
+```powershell
+pytest
+```
+
+Run the frontend production check from `frontend/`:
+
+```powershell
+npm run build
+```
+
+The AI evaluation suite belongs to Phase 6. Once implemented, its command will be:
+
+```powershell
+pytest tests/evals -m eval
+```
+
+## Demo mode
+
+Demo fixtures and controlled response release are later-phase work. Phase 1 has no inventory search, dealer messaging, quote analysis, LLM, or agent workflow to demo; both application processes can be started to verify the foundation.
+
+## Design principles
+
+- Evidence supports economically important claims.
+- Deterministic code owns arithmetic, constraints, policy, ranking, authorization, and state transitions.
+- LLMs are reserved for bounded semantic interpretation.
+- Human approval is required before outbound dealer communication.
+- Fixture providers will exercise the same application paths as live providers.
+- SQLite and a single application deployment are intentional for this assessment.
+
+## Known limitations
+
+Phase 1 is scaffolding only. It does not yet interpret goals, search inventory, orchestrate workflows, send messages, extract quotes, stream events, compare offers, run AI evaluations, or provide a polished product UI. These capabilities are intentionally deferred according to the phased engineering plan.
+
+## Productionization
+
+The assessment uses SQLite to minimize operational overhead. A production deployment would move domain persistence and LangGraph checkpoints to logically separate PostgreSQL-backed stores, use object storage for attachments, add production authentication and secret management, configure structured telemetry, and replace fixture providers selectively. Those changes should follow measured needs; the domain/provider boundaries are intended to make them incremental rather than require an architectural rewrite.

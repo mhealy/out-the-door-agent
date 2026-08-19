@@ -1,0 +1,20 @@
+services:
+  backend:
+    build: ./backend
+    environment:
+      OTD_DATABASE_URL: sqlite:////data/out_the_door.db
+      OTD_CORS_ORIGINS: '["http://localhost:5173"]'
+    ports:
+      - "8000:8000"
+    volumes:
+      - backend-data:/data
+
+  frontend:
+    build: ./frontend
+    depends_on:
+      - backend
+    ports:
+      - "5173:80"
+
+volumes:
+  backend-data:

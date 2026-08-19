@@ -10,11 +10,9 @@ from app.domain.message import OutboundDealerMessage
 from app.domain.vehicle import VehicleListing
 from app.persistence.models import ProposedActionRecord
 from app.persistence.outreach import OutreachRecordNotFoundError, OutreachRepository
+from app.providers.dealer_contacts import DealerContactResolver
 from app.providers.inventory import InventoryProvider
-from app.providers.messaging import (
-    MessagingProvider,
-    resolve_fixture_dealer_contact,
-)
+from app.providers.messaging import MessagingProvider
 
 
 INITIAL_QUOTE_REQUEST_REQUIREMENTS: Final[tuple[str, ...]] = (
@@ -141,10 +139,12 @@ class OutreachService:
         *,
         session: Session,
         inventory_provider: InventoryProvider,
+        dealer_contact_resolver: DealerContactResolver,
         messaging_provider: MessagingProvider,
     ) -> None:
         self._repository = OutreachRepository(session)
         self._inventory_provider = inventory_provider
+        self._dealer_contact_resolver = dealer_contact_resolver
         self._messaging_provider = messaging_provider
 
     async def prepare(self, vehicle_id: str) -> OutreachProposal:
@@ -152,7 +152,7 @@ class OutreachService:
         if vehicle is None:
             raise CandidateNotFoundError(vehicle_id)
 
-        recipient = resolve_fixture_dealer_contact(vehicle.dealer_id)
+        recipient = self._dealer_contact_resolver.resolve(vehicle.dealer_id)
         action = compose_initial_quote_request(
             action_id=str(uuid4()),
             vehicle=vehicle,

@@ -4,31 +4,12 @@ from typing import Protocol
 from app.domain.message import DeliveryReceipt, OutboundDealerMessage
 
 
-FIXTURE_DEALER_CONTACTS: dict[str, str] = {
-    "austin": "quotes@austin.example.test",
-    "baytown": "quotes@baytown.example.test",
-    "houston": "quotes@houston.example.test",
-    "katy": "quotes@katy.example.test",
-}
-
-
-class DealerContactNotFoundError(LookupError):
-    """No safe fixture recipient is configured for the requested dealer."""
-
-
 class MessagingProviderError(RuntimeError):
     """A messaging transport could not confirm delivery."""
 
 
 class MessagingProvider(Protocol):
     async def send(self, message: OutboundDealerMessage) -> DeliveryReceipt: ...
-
-
-def resolve_fixture_dealer_contact(dealer_id: str) -> str:
-    try:
-        return FIXTURE_DEALER_CONTACTS[dealer_id]
-    except KeyError as error:
-        raise DealerContactNotFoundError(dealer_id) from error
 
 
 class FixtureMessagingProvider:

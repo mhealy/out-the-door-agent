@@ -4,14 +4,19 @@ from fastapi import APIRouter, Body, Depends, HTTPException, status
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
-from app.dependencies import get_inventory_provider, get_messaging_provider
+from app.dependencies import (
+    get_dealer_contact_resolver,
+    get_inventory_provider,
+    get_messaging_provider,
+)
 from app.domain.approval import OutreachProposal
 from app.persistence.db import get_session
-from app.providers.inventory import InventoryProvider
-from app.providers.messaging import (
+from app.providers.dealer_contacts import (
     DealerContactNotFoundError,
-    MessagingProvider,
+    DealerContactResolver,
 )
+from app.providers.inventory import InventoryProvider
+from app.providers.messaging import MessagingProvider
 from app.services.outreach import (
     CandidateNotFoundError,
     OutreachActionAlreadyApprovedError,
@@ -40,11 +45,13 @@ class DecisionRequest(BaseModel):
 def _service(
     session: Session,
     inventory_provider: InventoryProvider,
+    dealer_contact_resolver: DealerContactResolver,
     messaging_provider: MessagingProvider,
 ) -> OutreachService:
     return OutreachService(
         session=session,
         inventory_provider=inventory_provider,
+        dealer_contact_resolver=dealer_contact_resolver,
         messaging_provider=messaging_provider,
     )
 
@@ -54,11 +61,17 @@ async def prepare_outreach(
     request: PrepareOutreachRequest,
     session: Annotated[Session, Depends(get_session)],
     inventory_provider: Annotated[InventoryProvider, Depends(get_inventory_provider)],
+    dealer_contact_resolver: Annotated[
+        DealerContactResolver, Depends(get_dealer_contact_resolver)
+    ],
     messaging_provider: Annotated[MessagingProvider, Depends(get_messaging_provider)],
 ) -> OutreachProposal:
     try:
         return await _service(
-            session, inventory_provider, messaging_provider
+            session,
+            inventory_provider,
+            dealer_contact_resolver,
+            messaging_provider,
         ).prepare(request.vehicle_id)
     except CandidateNotFoundError as error:
         raise HTTPException(
@@ -83,10 +96,18 @@ def inspect_outreach(
     action_id: str,
     session: Annotated[Session, Depends(get_session)],
     inventory_provider: Annotated[InventoryProvider, Depends(get_inventory_provider)],
+    dealer_contact_resolver: Annotated[
+        DealerContactResolver, Depends(get_dealer_contact_resolver)
+    ],
     messaging_provider: Annotated[MessagingProvider, Depends(get_messaging_provider)],
 ) -> OutreachProposal:
     try:
-        return _service(session, inventory_provider, messaging_provider).get(action_id)
+        return _service(
+            session,
+            inventory_provider,
+            dealer_contact_resolver,
+            messaging_provider,
+        ).get(action_id)
     except OutreachProposalNotFoundError as error:
         raise _proposal_not_found(error) from error
 
@@ -96,12 +117,18 @@ async def approve_outreach(
     action_id: str,
     session: Annotated[Session, Depends(get_session)],
     inventory_provider: Annotated[InventoryProvider, Depends(get_inventory_provider)],
+    dealer_contact_resolver: Annotated[
+        DealerContactResolver, Depends(get_dealer_contact_resolver)
+    ],
     messaging_provider: Annotated[MessagingProvider, Depends(get_messaging_provider)],
     _: Annotated[DecisionRequest | None, Body()] = None,
 ) -> OutreachProposal:
     try:
         return await _service(
-            session, inventory_provider, messaging_provider
+            session,
+            inventory_provider,
+            dealer_contact_resolver,
+            messaging_provider,
         ).approve_and_send(action_id)
     except OutreachProposalNotFoundError as error:
         raise _proposal_not_found(error) from error
@@ -144,11 +171,19 @@ def reject_outreach(
     action_id: str,
     session: Annotated[Session, Depends(get_session)],
     inventory_provider: Annotated[InventoryProvider, Depends(get_inventory_provider)],
+    dealer_contact_resolver: Annotated[
+        DealerContactResolver, Depends(get_dealer_contact_resolver)
+    ],
     messaging_provider: Annotated[MessagingProvider, Depends(get_messaging_provider)],
     _: Annotated[DecisionRequest | None, Body()] = None,
 ) -> OutreachProposal:
     try:
-        return _service(session, inventory_provider, messaging_provider).reject(action_id)
+        return _service(
+            session,
+            inventory_provider,
+            dealer_contact_resolver,
+            messaging_provider,
+        ).reject(action_id)
     except OutreachProposalNotFoundError as error:
         raise _proposal_not_found(error) from error
     except OutreachActionNotRejectableError as error:

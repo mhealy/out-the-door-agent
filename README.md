@@ -1,6 +1,6 @@
 # OutTheDoor
 
-OutTheDoor is an agentic AI buyer advocate for vehicle purchasing. It is designed to acquire and interpret written dealer offers, preserve evidence for material financial claims, and compare true out-the-door economics while keeping outbound dealer communication under explicit human control. This repository currently contains the Phase 1 application foundation only.
+OutTheDoor is an agentic AI buyer advocate for vehicle purchasing. It is designed to acquire and interpret written dealer offers, preserve evidence for material financial claims, and compare true out-the-door economics while keeping outbound dealer communication under explicit human control. The current vertical slice accepts a natural-language purchase goal, displays its interpreted constraints and preferences, and returns a deterministic shortlist from normalized fixture inventory.
 
 > Screenshot/GIF placeholder — the buyer workspace will be demonstrated after the inventory and quote phases are implemented.
 
@@ -61,7 +61,7 @@ Copy `.env.example` to `.env` at the repository root if you want to override def
 | `OTD_ENVIRONMENT` | `development` | Runtime environment label |
 | `OTD_DATABASE_URL` | `sqlite:///./out_the_door.db` | SQLAlchemy database URL |
 | `OTD_CORS_ORIGINS` | `["http://localhost:5173"]` | JSON array of allowed origins |
-| `VITE_API_BASE_URL` | `http://localhost:8000` | Future frontend API base URL |
+| `VITE_API_BASE_URL` | `http://localhost:8000` | Frontend API base URL |
 
 No API keys are required in Phase 1.
 
@@ -103,15 +103,15 @@ Run the frontend production check from `frontend/`:
 npm run build
 ```
 
-The AI evaluation suite belongs to Phase 6. Once implemented, its command will be:
+Run the current criteria-interpretation fixture evaluations with:
 
 ```powershell
-pytest tests/evals -m eval
+pytest tests/evals
 ```
 
 ## Demo mode
 
-Demo fixtures and controlled response release are later-phase work. Phase 1 has no inventory search, dealer messaging, quote analysis, LLM, or agent workflow to demo; both application processes can be started to verify the foundation.
+Start both applications, open `http://localhost:5173`, review or edit the example Houston-area purchase goal, and select **Search inventory**. The interpreted constraints, preferences, assumptions or ambiguities, and qualified fixture vehicles appear on the same page.
 
 ## Design principles
 
@@ -124,7 +124,7 @@ Demo fixtures and controlled response release are later-phase work. Phase 1 has 
 
 ## Known limitations
 
-Phase 1 is scaffolding only. It does not yet interpret goals, search inventory, orchestrate workflows, send messages, extract quotes, stream events, compare offers, run AI evaluations, or provide a polished product UI. These capabilities are intentionally deferred according to the phased engineering plan.
+Criteria interpretation is currently a fixture implementation limited to the canonical Hyundai Tucson Hybrid demo vocabulary. There is no configured model-backed interpreter, live inventory, agent orchestration, dealer messaging, quote analysis, event streaming, or polished final-product UI yet. These capabilities remain deferred according to the phased engineering plan.
 
 ## Productionization
 

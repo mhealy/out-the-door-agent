@@ -18,6 +18,7 @@ class VehicleListing(BaseModel):
     msrp: Decimal | None = Field(default=None, ge=0)
     exterior_color: str | None = None
     interior_color: str | None = None
+    features: list[str] = Field(default_factory=list)
     dealer_id: str
     dealer_name: str
     latitude: float | None = None

@@ -1,14 +1,14 @@
 import { FormEvent, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 
+import { OutreachApproval, type OutreachCandidate } from "./components/OutreachApproval";
 import { QuoteAnalysisWorkspace } from "./components/QuoteAnalysisWorkspace";
 
 type Criteria = { make: string; model: string; hard_constraints: string[]; soft_preferences: string[] };
 type Interpretation = { criteria: Criteria; assumptions: string[]; unresolved_ambiguities: string[] };
-type Candidate = {
-  id: string; year: number; make: string; model: string; trim: string | null;
+type Candidate = OutreachCandidate & {
   advertised_price: string | null; exterior_color: string | null;
-  dealer_name: string; distance_miles: number | null; features: string[];
+  distance_miles: number | null; features: string[];
 };
 type SearchResult = { interpretation: Interpretation; candidates: Candidate[] };
 
@@ -55,6 +55,7 @@ function CandidateCard({ candidate }: { candidate: Candidate }) {
     <h3>{candidate.year} {candidate.make} {candidate.model} {candidate.trim}</h3>
     <p className="price">{candidate.advertised_price ? `$${Number(candidate.advertised_price).toLocaleString()}` : "Price unavailable"}</p>
     <p>{candidate.exterior_color} · {candidate.features.join(" · ")}</p>
+    <OutreachApproval apiBaseUrl={apiBaseUrl} candidate={candidate} />
   </article>;
 }
 

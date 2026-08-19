@@ -240,7 +240,7 @@ async function reconcileDecision(
   message: string,
   errorCode: string | null = null,
 ): Promise<{
-  proposal: OutreachProposal;
+  proposal: OutreachProposal | null;
   error: string | null;
   errorCode: string | null;
 }> {
@@ -255,7 +255,11 @@ async function reconcileDecision(
       errorCode: outcomeConfirmed ? null : errorCode,
     };
   } catch {
-    throw new Error(message);
+    return {
+      proposal: null,
+      error: message,
+      errorCode,
+    };
   }
 }
 

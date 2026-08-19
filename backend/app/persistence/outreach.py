@@ -17,6 +17,7 @@ from app.domain.message import DeliveryReceipt
 from app.domain.vehicle import VehicleListing
 from app.persistence.models import (
     ApprovalRecordModel,
+    DealerInteractionRecord,
     OutboundDeliveryRecord,
     ProposedActionRecord,
 )
@@ -174,6 +175,17 @@ class OutreachRepository:
                 sent_at=receipt.sent_at,
             )
         )
+        if action.action_type == "SEND_INITIAL_QUOTE_REQUEST":
+            self._session.add(
+                DealerInteractionRecord(
+                    id=str(uuid4()),
+                    initial_action_id=action_id,
+                    dealer_id=action.dealer_id,
+                    vehicle_id=action.vehicle_id,
+                    vehicle_snapshot=dict(action.vehicle_snapshot),
+                    created_at=receipt.sent_at,
+                )
+            )
         self._session.commit()
         self._session.expire_all()
 

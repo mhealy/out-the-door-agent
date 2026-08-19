@@ -769,6 +769,14 @@ describe("OutreachApproval", () => {
         message: newerInboundMessage,
       },
     };
+    const pendingFollowupFromNewerResponse = {
+      ...pendingFollowupProposal,
+      id: "followup-2",
+      subject: "Clarification for the updated dealer response",
+      body: "Thanks for the update. Could you confirm whether dealer financing is required?",
+      requested_information: ["financing_dependency"],
+      requested_information_labels: ["Dealer-financing dependency"],
+    } as OutreachProposal;
     const staleConflictMessage = "A newer dealer response was analyzed. Prepare a new follow-up.";
     const fetchMock = vi.spyOn(globalThis, "fetch")
       .mockResolvedValueOnce(jsonResponse(pendingProposal, 201))
@@ -782,7 +790,8 @@ describe("OutreachApproval", () => {
         },
       }, 409))
       .mockResolvedValueOnce(jsonResponse(pendingFollowupProposal))
-      .mockResolvedValueOnce(jsonResponse(interactionWithNewerResponse));
+      .mockResolvedValueOnce(jsonResponse(interactionWithNewerResponse))
+      .mockResolvedValueOnce(jsonResponse(pendingFollowupFromNewerResponse, 201));
 
     const dialog = await openAnalyzedInteraction();
     fireEvent.click(within(dialog).getByRole("button", { name: "Prepare follow-up" }));
@@ -795,12 +804,34 @@ describe("OutreachApproval", () => {
       .not.toBeInTheDocument();
     expect(within(followupDialog).queryByText("fixture-followup-1")).not.toBeInTheDocument();
     expect(within(followupDialog).queryByText("Follow-up 1 sent")).not.toBeInTheDocument();
+    expect(within(followupDialog).queryByRole("button", { name: "Approve & send" }))
+      .not.toBeInTheDocument();
+    const prepareLatestFollowup = within(followupDialog)
+      .getByRole("button", { name: "Prepare follow-up" });
+    expect(prepareLatestFollowup).toBeEnabled();
+    const preparationCallsBeforeRetry = fetchMock.mock.calls.filter(([url]) => (
+      url === "http://api.test/outreach/proposals/proposal-1/followups"
+    ));
+    expect(preparationCallsBeforeRetry).toHaveLength(1);
     await waitFor(() => {
       const approvalCalls = fetchMock.mock.calls.filter(([url]) => (
         url === "http://api.test/outreach/proposals/followup-1/approve"
       ));
       expect(approvalCalls).toHaveLength(1);
     });
+
+    fireEvent.click(prepareLatestFollowup);
+
+    expect(await within(followupDialog).findByText(pendingFollowupFromNewerResponse.subject))
+      .toBeVisible();
+    expect(within(followupDialog).getByText((_, element) => (
+      element?.tagName === "PRE"
+      && element.textContent === pendingFollowupFromNewerResponse.body
+    ))).toBeVisible();
+    const preparationCalls = fetchMock.mock.calls.filter(([url]) => (
+      url === "http://api.test/outreach/proposals/proposal-1/followups"
+    ));
+    expect(preparationCalls).toHaveLength(preparationCallsBeforeRetry.length + 1);
   });
 
   it.each([

@@ -1,6 +1,8 @@
 import { FormEvent, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 
+import { QuoteAnalysisWorkspace } from "./components/QuoteAnalysisWorkspace";
+
 type Criteria = { make: string; model: string; hard_constraints: string[]; soft_preferences: string[] };
 type Interpretation = { criteria: Criteria; assumptions: string[]; unresolved_ambiguities: string[] };
 type Candidate = {
@@ -77,5 +79,6 @@ export function App() {
       <InterpretedCriteria interpretation={mutation.data.interpretation} />
       <CandidateGrid candidates={mutation.data.candidates} />
     </section>}
+    <QuoteAnalysisWorkspace apiBaseUrl={apiBaseUrl} />
   </main>;
 }

@@ -1,0 +1,1084 @@
+[
+  {
+    "case_id": "msg-fully-itemized",
+    "extraction": {
+      "vehicle_vin": "KM8JCDD10SU000001",
+      "stock_number": "B1001",
+      "selling_price": "37800",
+      "claimed_otd": "40415",
+      "dealer_fees": [
+        {
+          "name": "Documentation fee",
+          "amount": "225",
+          "stated_mandatory": true,
+          "evidence_id": "ev-fi-doc-fee"
+        }
+      ],
+      "government_fees": [
+        {
+          "name": "Texas sales tax",
+          "amount": "2293",
+          "stated_mandatory": null,
+          "evidence_id": "ev-fi-sales-tax"
+        },
+        {
+          "name": "Title and license",
+          "amount": "97",
+          "stated_mandatory": null,
+          "evidence_id": "ev-fi-title-license"
+        }
+      ],
+      "addons": [],
+      "incentives": [],
+      "financing_required": false,
+      "trade_required": false,
+      "expiration": "2026-08-31T17:00:00-05:00",
+      "explicit_no_addons_statement": true,
+      "explicit_all_fees_included_statement": true,
+      "unresolved_questions": [],
+      "evidence_ids": [
+        "ev-fi-vin",
+        "ev-fi-stock",
+        "ev-fi-selling-price",
+        "ev-fi-doc-fee",
+        "ev-fi-sales-tax",
+        "ev-fi-title-license",
+        "ev-fi-no-addons",
+        "ev-fi-otd",
+        "ev-fi-all-fees",
+        "ev-fi-financing",
+        "ev-fi-trade",
+        "ev-fi-expiration"
+      ],
+      "extraction_confidence": 1.0
+    },
+    "evidence": [
+      {
+        "id": "ev-fi-vin",
+        "field_name": "vehicle_vin",
+        "excerpt": "Here is the written quote for the 2025 Hyundai Tucson Hybrid Limited, VIN KM8JCDD10SU000001, stock B1001."
+      },
+      {
+        "id": "ev-fi-stock",
+        "field_name": "stock_number",
+        "excerpt": "Here is the written quote for the 2025 Hyundai Tucson Hybrid Limited, VIN KM8JCDD10SU000001, stock B1001."
+      },
+      {
+        "id": "ev-fi-selling-price",
+        "field_name": "selling_price",
+        "excerpt": "Selling price: $37,800."
+      },
+      {
+        "id": "ev-fi-doc-fee",
+        "field_name": "dealer_fees",
+        "excerpt": "Required documentation fee: $225."
+      },
+      {
+        "id": "ev-fi-sales-tax",
+        "field_name": "government_fees",
+        "excerpt": "Texas sales tax: $2,293."
+      },
+      {
+        "id": "ev-fi-title-license",
+        "field_name": "government_fees",
+        "excerpt": "Title and license: $97."
+      },
+      {
+        "id": "ev-fi-no-addons",
+        "field_name": "explicit_no_addons_statement",
+        "excerpt": "There are no dealer-installed add-ons."
+      },
+      {
+        "id": "ev-fi-otd",
+        "field_name": "claimed_otd",
+        "excerpt": "The cash out-the-door total is $40,415, including every required fee and government charge."
+      },
+      {
+        "id": "ev-fi-all-fees",
+        "field_name": "explicit_all_fees_included_statement",
+        "excerpt": "The cash out-the-door total is $40,415, including every required fee and government charge."
+      },
+      {
+        "id": "ev-fi-financing",
+        "field_name": "financing_required",
+        "excerpt": "No dealer financing or trade-in is required for this price."
+      },
+      {
+        "id": "ev-fi-trade",
+        "field_name": "trade_required",
+        "excerpt": "No dealer financing or trade-in is required for this price."
+      },
+      {
+        "id": "ev-fi-expiration",
+        "field_name": "expiration",
+        "excerpt": "This quote is valid through August 31, 2026 at 5:00 PM CDT."
+      }
+    ]
+  },
+  {
+    "case_id": "msg-otd-without-itemization",
+    "extraction": {
+      "vehicle_vin": "KM8JCDD12TU000003",
+      "stock_number": null,
+      "selling_price": null,
+      "claimed_otd": "40980",
+      "dealer_fees": [],
+      "government_fees": [
+        {
+          "name": "Tax, title, and license",
+          "amount": null,
+          "stated_mandatory": null,
+          "evidence_id": "ev-otd-only-government-fees"
+        }
+      ],
+      "addons": [],
+      "incentives": [],
+      "financing_required": false,
+      "trade_required": false,
+      "expiration": null,
+      "explicit_no_addons_statement": true,
+      "explicit_all_fees_included_statement": true,
+      "unresolved_questions": [
+        "An itemized selling price, dealer fees, and government charges were not provided."
+      ],
+      "evidence_ids": [
+        "ev-otd-only-vin",
+        "ev-otd-only-total",
+        "ev-otd-only-government-fees",
+        "ev-otd-only-all-fees",
+        "ev-otd-only-no-addons",
+        "ev-otd-only-financing",
+        "ev-otd-only-trade",
+        "ev-otd-only-breakdown"
+      ],
+      "extraction_confidence": 1.0
+    },
+    "evidence": [
+      {
+        "id": "ev-otd-only-vin",
+        "field_name": "vehicle_vin",
+        "excerpt": "Quote for VIN KM8JCDD12TU000003."
+      },
+      {
+        "id": "ev-otd-only-total",
+        "field_name": "claimed_otd",
+        "excerpt": "Our written cash OTD is $40,980."
+      },
+      {
+        "id": "ev-otd-only-government-fees",
+        "field_name": "government_fees",
+        "excerpt": "That total includes all required fees and tax, title, and license."
+      },
+      {
+        "id": "ev-otd-only-all-fees",
+        "field_name": "explicit_all_fees_included_statement",
+        "excerpt": "That total includes all required fees and tax, title, and license."
+      },
+      {
+        "id": "ev-otd-only-no-addons",
+        "field_name": "explicit_no_addons_statement",
+        "excerpt": "There are no dealer-installed add-ons, and no dealer financing or trade-in is required."
+      },
+      {
+        "id": "ev-otd-only-financing",
+        "field_name": "financing_required",
+        "excerpt": "There are no dealer-installed add-ons, and no dealer financing or trade-in is required."
+      },
+      {
+        "id": "ev-otd-only-trade",
+        "field_name": "trade_required",
+        "excerpt": "There are no dealer-installed add-ons, and no dealer financing or trade-in is required."
+      },
+      {
+        "id": "ev-otd-only-breakdown",
+        "field_name": "unresolved_questions",
+        "excerpt": "We cannot provide a line-item breakdown by email."
+      }
+    ]
+  },
+  {
+    "case_id": "msg-plus-ttl",
+    "extraction": {
+      "vehicle_vin": "KM8JCDD11SU000002",
+      "stock_number": null,
+      "selling_price": "37450",
+      "claimed_otd": null,
+      "dealer_fees": [],
+      "government_fees": [
+        {
+          "name": "Tax, title, and license",
+          "amount": null,
+          "stated_mandatory": null,
+          "evidence_id": "ev-ttl-government-fees"
+        }
+      ],
+      "addons": [],
+      "incentives": [],
+      "financing_required": null,
+      "trade_required": null,
+      "expiration": null,
+      "explicit_no_addons_statement": false,
+      "explicit_all_fees_included_statement": false,
+      "unresolved_questions": [],
+      "evidence_ids": [
+        "ev-ttl-vin",
+        "ev-ttl-selling-price",
+        "ev-ttl-government-fees"
+      ],
+      "extraction_confidence": 1.0
+    },
+    "evidence": [
+      {
+        "id": "ev-ttl-vin",
+        "field_name": "vehicle_vin",
+        "excerpt": "The selling price for VIN KM8JCDD11SU000002 is $37,450 plus tax, title, and license."
+      },
+      {
+        "id": "ev-ttl-selling-price",
+        "field_name": "selling_price",
+        "excerpt": "The selling price for VIN KM8JCDD11SU000002 is $37,450 plus tax, title, and license."
+      },
+      {
+        "id": "ev-ttl-government-fees",
+        "field_name": "government_fees",
+        "excerpt": "The selling price for VIN KM8JCDD11SU000002 is $37,450 plus tax, title, and license."
+      }
+    ]
+  },
+  {
+    "case_id": "msg-financing-rebate",
+    "extraction": {
+      "vehicle_vin": null,
+      "stock_number": null,
+      "selling_price": "37250",
+      "claimed_otd": "41960",
+      "dealer_fees": [],
+      "government_fees": [],
+      "addons": [],
+      "incentives": [
+        {
+          "name": "Hyundai Motor Finance rebate",
+          "amount": "1000",
+          "eligibility_condition": "Requires financing through Hyundai Motor Finance",
+          "requires_financing": true,
+          "requires_trade": null,
+          "evidence_id": "ev-finance-incentive"
+        }
+      ],
+      "financing_required": true,
+      "trade_required": false,
+      "expiration": null,
+      "explicit_no_addons_statement": false,
+      "explicit_all_fees_included_statement": false,
+      "unresolved_questions": [
+        "A cash out-the-door total without the financing rebate was not provided."
+      ],
+      "evidence_ids": [
+        "ev-finance-selling-price",
+        "ev-finance-incentive",
+        "ev-finance-required",
+        "ev-finance-otd",
+        "ev-finance-no-trade",
+        "ev-finance-cash-missing"
+      ],
+      "extraction_confidence": 1.0
+    },
+    "evidence": [
+      {
+        "id": "ev-finance-selling-price",
+        "field_name": "selling_price",
+        "excerpt": "Selling price $37,250 includes a $1,000 Hyundai Motor Finance rebate."
+      },
+      {
+        "id": "ev-finance-incentive",
+        "field_name": "incentives",
+        "excerpt": "Selling price $37,250 includes a $1,000 Hyundai Motor Finance rebate.\nThe $1,000 rebate requires financing through Hyundai Motor Finance."
+      },
+      {
+        "id": "ev-finance-required",
+        "field_name": "financing_required",
+        "excerpt": "The $1,000 rebate requires financing through Hyundai Motor Finance."
+      },
+      {
+        "id": "ev-finance-otd",
+        "field_name": "claimed_otd",
+        "excerpt": "Written OTD with that rebate is $41,960."
+      },
+      {
+        "id": "ev-finance-no-trade",
+        "field_name": "trade_required",
+        "excerpt": "No trade-in is required."
+      },
+      {
+        "id": "ev-finance-cash-missing",
+        "field_name": "unresolved_questions",
+        "excerpt": "The selling price without the financing rebate is $38,250; we have not calculated a cash OTD."
+      }
+    ]
+  },
+  {
+    "case_id": "msg-trade-assistance",
+    "extraction": {
+      "vehicle_vin": null,
+      "stock_number": null,
+      "selling_price": "36900",
+      "claimed_otd": "40250",
+      "dealer_fees": [],
+      "government_fees": [],
+      "addons": [],
+      "incentives": [
+        {
+          "name": "Trade assistance",
+          "amount": "1500",
+          "eligibility_condition": "Requires a qualifying 2015-or-newer trade-in",
+          "requires_financing": null,
+          "requires_trade": true,
+          "evidence_id": "ev-trade-incentive"
+        }
+      ],
+      "financing_required": false,
+      "trade_required": true,
+      "expiration": null,
+      "explicit_no_addons_statement": false,
+      "explicit_all_fees_included_statement": false,
+      "unresolved_questions": [
+        "Dealer add-on status and fee itemization were not provided."
+      ],
+      "evidence_ids": [
+        "ev-trade-selling-price",
+        "ev-trade-incentive",
+        "ev-trade-required",
+        "ev-trade-otd",
+        "ev-trade-no-financing",
+        "ev-trade-missing-details"
+      ],
+      "extraction_confidence": 1.0
+    },
+    "evidence": [
+      {
+        "id": "ev-trade-selling-price",
+        "field_name": "selling_price",
+        "excerpt": "Our $36,900 selling price includes $1,500 trade assistance and assumes a qualifying 2015-or-newer trade-in."
+      },
+      {
+        "id": "ev-trade-incentive",
+        "field_name": "incentives",
+        "excerpt": "Our $36,900 selling price includes $1,500 trade assistance and assumes a qualifying 2015-or-newer trade-in."
+      },
+      {
+        "id": "ev-trade-required",
+        "field_name": "trade_required",
+        "excerpt": "Our $36,900 selling price includes $1,500 trade assistance and assumes a qualifying 2015-or-newer trade-in."
+      },
+      {
+        "id": "ev-trade-otd",
+        "field_name": "claimed_otd",
+        "excerpt": "The written OTD shown is $40,250 and assumes the qualifying trade."
+      },
+      {
+        "id": "ev-trade-no-financing",
+        "field_name": "financing_required",
+        "excerpt": "Dealer financing is not required."
+      },
+      {
+        "id": "ev-trade-missing-details",
+        "field_name": "unresolved_questions",
+        "excerpt": "Add-on status and fee itemization are not provided."
+      }
+    ]
+  },
+  {
+    "case_id": "msg-military-incentive",
+    "extraction": {
+      "vehicle_vin": "KM8JCDD10SU000001",
+      "stock_number": null,
+      "selling_price": "37600",
+      "claimed_otd": "40620",
+      "dealer_fees": [],
+      "government_fees": [],
+      "addons": [],
+      "incentives": [
+        {
+          "name": "Military appreciation incentive",
+          "amount": "500",
+          "eligibility_condition": "Buyer must be active duty, reserve, retired military, or an eligible veteran and provide verification",
+          "requires_financing": null,
+          "requires_trade": null,
+          "evidence_id": "ev-military-incentive"
+        }
+      ],
+      "financing_required": false,
+      "trade_required": false,
+      "expiration": null,
+      "explicit_no_addons_statement": true,
+      "explicit_all_fees_included_statement": false,
+      "unresolved_questions": [
+        "Military incentive eligibility has not been confirmed."
+      ],
+      "evidence_ids": [
+        "ev-military-vin",
+        "ev-military-selling-price",
+        "ev-military-incentive",
+        "ev-military-otd",
+        "ev-military-financing",
+        "ev-military-trade",
+        "ev-military-no-addons",
+        "ev-military-unconfirmed"
+      ],
+      "extraction_confidence": 1.0
+    },
+    "evidence": [
+      {
+        "id": "ev-military-vin",
+        "field_name": "vehicle_vin",
+        "excerpt": "Quote for VIN KM8JCDD10SU000001."
+      },
+      {
+        "id": "ev-military-selling-price",
+        "field_name": "selling_price",
+        "excerpt": "The $37,600 selling price includes a $500 military appreciation incentive."
+      },
+      {
+        "id": "ev-military-incentive",
+        "field_name": "incentives",
+        "excerpt": "The $37,600 selling price includes a $500 military appreciation incentive.\nThe buyer must be active duty, reserve, retired military, or an eligible veteran and must provide verification; eligibility has not been confirmed."
+      },
+      {
+        "id": "ev-military-otd",
+        "field_name": "claimed_otd",
+        "excerpt": "Written OTD after the military incentive is $40,620."
+      },
+      {
+        "id": "ev-military-financing",
+        "field_name": "financing_required",
+        "excerpt": "Financing and trade-in are not required."
+      },
+      {
+        "id": "ev-military-trade",
+        "field_name": "trade_required",
+        "excerpt": "Financing and trade-in are not required."
+      },
+      {
+        "id": "ev-military-no-addons",
+        "field_name": "explicit_no_addons_statement",
+        "excerpt": "There are no dealer add-ons."
+      },
+      {
+        "id": "ev-military-unconfirmed",
+        "field_name": "unresolved_questions",
+        "excerpt": "The buyer must be active duty, reserve, retired military, or an eligible veteran and must provide verification; eligibility has not been confirmed."
+      }
+    ]
+  },
+  {
+    "case_id": "msg-college-incentive",
+    "extraction": {
+      "vehicle_vin": "KM8JCDD10SU000001",
+      "stock_number": null,
+      "selling_price": "37400",
+      "claimed_otd": "40430",
+      "dealer_fees": [],
+      "government_fees": [],
+      "addons": [],
+      "incentives": [
+        {
+          "name": "College graduate incentive",
+          "amount": "400",
+          "eligibility_condition": "Requires graduation within the last two years or within the next six months, plus program documentation",
+          "requires_financing": null,
+          "requires_trade": null,
+          "evidence_id": "ev-college-incentive"
+        }
+      ],
+      "financing_required": false,
+      "trade_required": false,
+      "expiration": null,
+      "explicit_no_addons_statement": false,
+      "explicit_all_fees_included_statement": false,
+      "unresolved_questions": [
+        "Dealer add-on status was not provided."
+      ],
+      "evidence_ids": [
+        "ev-college-vin",
+        "ev-college-selling-price",
+        "ev-college-incentive",
+        "ev-college-otd",
+        "ev-college-financing",
+        "ev-college-trade",
+        "ev-college-addon-missing"
+      ],
+      "extraction_confidence": 1.0
+    },
+    "evidence": [
+      {
+        "id": "ev-college-vin",
+        "field_name": "vehicle_vin",
+        "excerpt": "For VIN KM8JCDD10SU000001, selling price is $37,400 after a $400 college graduate incentive."
+      },
+      {
+        "id": "ev-college-selling-price",
+        "field_name": "selling_price",
+        "excerpt": "For VIN KM8JCDD10SU000001, selling price is $37,400 after a $400 college graduate incentive."
+      },
+      {
+        "id": "ev-college-incentive",
+        "field_name": "incentives",
+        "excerpt": "For VIN KM8JCDD10SU000001, selling price is $37,400 after a $400 college graduate incentive.\nThe $400 incentive requires graduation within the last two years or within the next six months, plus program documentation."
+      },
+      {
+        "id": "ev-college-otd",
+        "field_name": "claimed_otd",
+        "excerpt": "Written OTD with the college incentive is $40,430."
+      },
+      {
+        "id": "ev-college-financing",
+        "field_name": "financing_required",
+        "excerpt": "No financing or trade-in is required."
+      },
+      {
+        "id": "ev-college-trade",
+        "field_name": "trade_required",
+        "excerpt": "No financing or trade-in is required."
+      },
+      {
+        "id": "ev-college-addon-missing",
+        "field_name": "unresolved_questions",
+        "excerpt": "Dealer add-on status was not provided."
+      }
+    ]
+  },
+  {
+    "case_id": "msg-mandatory-addons",
+    "extraction": {
+      "vehicle_vin": "KM8JCDD11SU000002",
+      "stock_number": null,
+      "selling_price": "37500",
+      "claimed_otd": "41780",
+      "dealer_fees": [
+        {
+          "name": "Documentation fee",
+          "amount": "225",
+          "stated_mandatory": true,
+          "evidence_id": "ev-addons-doc-fee"
+        }
+      ],
+      "government_fees": [
+        {
+          "name": "Tax, title, and license",
+          "amount": "2160",
+          "stated_mandatory": null,
+          "evidence_id": "ev-addons-government-fees"
+        }
+      ],
+      "addons": [
+        {
+          "name": "Ceramic Shield",
+          "amount": "1299",
+          "stated_mandatory": true,
+          "evidence_id": "ev-addons-ceramic"
+        },
+        {
+          "name": "SecureTrack theft recovery",
+          "amount": "596",
+          "stated_mandatory": true,
+          "evidence_id": "ev-addons-theft"
+        }
+      ],
+      "incentives": [],
+      "financing_required": false,
+      "trade_required": false,
+      "expiration": null,
+      "explicit_no_addons_statement": false,
+      "explicit_all_fees_included_statement": false,
+      "unresolved_questions": [],
+      "evidence_ids": [
+        "ev-addons-vin",
+        "ev-addons-selling-price",
+        "ev-addons-ceramic",
+        "ev-addons-theft",
+        "ev-addons-doc-fee",
+        "ev-addons-government-fees",
+        "ev-addons-otd",
+        "ev-addons-financing",
+        "ev-addons-trade"
+      ],
+      "extraction_confidence": 1.0
+    },
+    "evidence": [
+      {
+        "id": "ev-addons-vin",
+        "field_name": "vehicle_vin",
+        "excerpt": "Selling price for VIN KM8JCDD11SU000002 is $37,500."
+      },
+      {
+        "id": "ev-addons-selling-price",
+        "field_name": "selling_price",
+        "excerpt": "Selling price for VIN KM8JCDD11SU000002 is $37,500."
+      },
+      {
+        "id": "ev-addons-ceramic",
+        "field_name": "addons",
+        "excerpt": "Every vehicle is delivered with Ceramic Shield for $1,299 and SecureTrack theft recovery for $596; both products are mandatory and cannot be removed."
+      },
+      {
+        "id": "ev-addons-theft",
+        "field_name": "addons",
+        "excerpt": "Every vehicle is delivered with Ceramic Shield for $1,299 and SecureTrack theft recovery for $596; both products are mandatory and cannot be removed."
+      },
+      {
+        "id": "ev-addons-doc-fee",
+        "field_name": "dealer_fees",
+        "excerpt": "The required documentation fee is $225."
+      },
+      {
+        "id": "ev-addons-government-fees",
+        "field_name": "government_fees",
+        "excerpt": "Government tax, title, and license total $2,160."
+      },
+      {
+        "id": "ev-addons-otd",
+        "field_name": "claimed_otd",
+        "excerpt": "The written out-the-door total is $41,780."
+      },
+      {
+        "id": "ev-addons-financing",
+        "field_name": "financing_required",
+        "excerpt": "Dealer financing and a trade-in are not required."
+      },
+      {
+        "id": "ev-addons-trade",
+        "field_name": "trade_required",
+        "excerpt": "Dealer financing and a trade-in are not required."
+      }
+    ]
+  },
+  {
+    "case_id": "msg-explicit-no-addons",
+    "extraction": {
+      "vehicle_vin": "KM8JCDD10SU000001",
+      "stock_number": null,
+      "selling_price": "37950",
+      "claimed_otd": "40315",
+      "dealer_fees": [
+        {
+          "name": "Documentation fee",
+          "amount": "225",
+          "stated_mandatory": true,
+          "evidence_id": "ev-no-addons-doc-fee"
+        }
+      ],
+      "government_fees": [
+        {
+          "name": "Tax, title, and license",
+          "amount": "2140",
+          "stated_mandatory": null,
+          "evidence_id": "ev-no-addons-government-fees"
+        }
+      ],
+      "addons": [],
+      "incentives": [],
+      "financing_required": false,
+      "trade_required": false,
+      "expiration": null,
+      "explicit_no_addons_statement": true,
+      "explicit_all_fees_included_statement": false,
+      "unresolved_questions": [],
+      "evidence_ids": [
+        "ev-no-addons-vin",
+        "ev-no-addons-selling-price",
+        "ev-no-addons-statement",
+        "ev-no-addons-doc-fee",
+        "ev-no-addons-government-fees",
+        "ev-no-addons-otd",
+        "ev-no-addons-financing",
+        "ev-no-addons-trade"
+      ],
+      "extraction_confidence": 1.0
+    },
+    "evidence": [
+      {
+        "id": "ev-no-addons-vin",
+        "field_name": "vehicle_vin",
+        "excerpt": "For VIN KM8JCDD10SU000001, the selling price is $37,950."
+      },
+      {
+        "id": "ev-no-addons-selling-price",
+        "field_name": "selling_price",
+        "excerpt": "For VIN KM8JCDD10SU000001, the selling price is $37,950."
+      },
+      {
+        "id": "ev-no-addons-statement",
+        "field_name": "explicit_no_addons_statement",
+        "excerpt": "We have no dealer-installed products or add-ons."
+      },
+      {
+        "id": "ev-no-addons-doc-fee",
+        "field_name": "dealer_fees",
+        "excerpt": "The required documentation fee is $225, and tax, title, and license total $2,140."
+      },
+      {
+        "id": "ev-no-addons-government-fees",
+        "field_name": "government_fees",
+        "excerpt": "The required documentation fee is $225, and tax, title, and license total $2,140."
+      },
+      {
+        "id": "ev-no-addons-otd",
+        "field_name": "claimed_otd",
+        "excerpt": "Your written cash OTD is $40,315."
+      },
+      {
+        "id": "ev-no-addons-financing",
+        "field_name": "financing_required",
+        "excerpt": "No dealer financing or trade-in is required."
+      },
+      {
+        "id": "ev-no-addons-trade",
+        "field_name": "trade_required",
+        "excerpt": "No dealer financing or trade-in is required."
+      }
+    ]
+  },
+  {
+    "case_id": "msg-inconsistent-math",
+    "extraction": {
+      "vehicle_vin": "KM8JCDD12TU000003",
+      "stock_number": null,
+      "selling_price": "37000",
+      "claimed_otd": "40225",
+      "dealer_fees": [
+        {
+          "name": "Documentation fee",
+          "amount": "225",
+          "stated_mandatory": null,
+          "evidence_id": "ev-math-doc-fee"
+        }
+      ],
+      "government_fees": [
+        {
+          "name": "Taxes, title, and license",
+          "amount": "2500",
+          "stated_mandatory": null,
+          "evidence_id": "ev-math-government-fees"
+        }
+      ],
+      "addons": [
+        {
+          "name": "Protection package",
+          "amount": "1500",
+          "stated_mandatory": true,
+          "evidence_id": "ev-math-addon"
+        }
+      ],
+      "incentives": [],
+      "financing_required": false,
+      "trade_required": false,
+      "expiration": null,
+      "explicit_no_addons_statement": false,
+      "explicit_all_fees_included_statement": false,
+      "unresolved_questions": [],
+      "evidence_ids": [
+        "ev-math-vin",
+        "ev-math-selling-price",
+        "ev-math-addon",
+        "ev-math-doc-fee",
+        "ev-math-government-fees",
+        "ev-math-otd",
+        "ev-math-financing",
+        "ev-math-trade"
+      ],
+      "extraction_confidence": 1.0
+    },
+    "evidence": [
+      {
+        "id": "ev-math-vin",
+        "field_name": "vehicle_vin",
+        "excerpt": "This quote is for VIN KM8JCDD12TU000003 and does not require financing or a trade-in."
+      },
+      {
+        "id": "ev-math-selling-price",
+        "field_name": "selling_price",
+        "excerpt": "Selling price: $37,000."
+      },
+      {
+        "id": "ev-math-addon",
+        "field_name": "addons",
+        "excerpt": "Mandatory protection package: $1,500."
+      },
+      {
+        "id": "ev-math-doc-fee",
+        "field_name": "dealer_fees",
+        "excerpt": "Documentation fee: $225."
+      },
+      {
+        "id": "ev-math-government-fees",
+        "field_name": "government_fees",
+        "excerpt": "Government taxes, title, and license: $2,500."
+      },
+      {
+        "id": "ev-math-otd",
+        "field_name": "claimed_otd",
+        "excerpt": "Dealer-stated OTD: $40,225."
+      },
+      {
+        "id": "ev-math-financing",
+        "field_name": "financing_required",
+        "excerpt": "This quote is for VIN KM8JCDD12TU000003 and does not require financing or a trade-in."
+      },
+      {
+        "id": "ev-math-trade",
+        "field_name": "trade_required",
+        "excerpt": "This quote is for VIN KM8JCDD12TU000003 and does not require financing or a trade-in."
+      }
+    ]
+  },
+  {
+    "case_id": "msg-wrong-vin",
+    "extraction": {
+      "vehicle_vin": "KM8JCDD99SU999999",
+      "stock_number": "H9999",
+      "selling_price": "36990",
+      "claimed_otd": "40100",
+      "dealer_fees": [],
+      "government_fees": [],
+      "addons": [],
+      "incentives": [],
+      "financing_required": null,
+      "trade_required": null,
+      "expiration": null,
+      "explicit_no_addons_statement": false,
+      "explicit_all_fees_included_statement": false,
+      "unresolved_questions": [
+        "Dealer add-ons and financing or trade-in conditions were not itemized."
+      ],
+      "evidence_ids": [
+        "ev-wrong-vin",
+        "ev-wrong-stock",
+        "ev-wrong-selling-price",
+        "ev-wrong-otd",
+        "ev-wrong-missing-details"
+      ],
+      "extraction_confidence": 1.0
+    },
+    "evidence": [
+      {
+        "id": "ev-wrong-vin",
+        "field_name": "vehicle_vin",
+        "excerpt": "Attached numbers are for VIN KM8JCDD99SU999999, stock H9999."
+      },
+      {
+        "id": "ev-wrong-stock",
+        "field_name": "stock_number",
+        "excerpt": "Attached numbers are for VIN KM8JCDD99SU999999, stock H9999."
+      },
+      {
+        "id": "ev-wrong-selling-price",
+        "field_name": "selling_price",
+        "excerpt": "Selling price is $36,990 and written OTD is $40,100."
+      },
+      {
+        "id": "ev-wrong-otd",
+        "field_name": "claimed_otd",
+        "excerpt": "Selling price is $36,990 and written OTD is $40,100."
+      },
+      {
+        "id": "ev-wrong-missing-details",
+        "field_name": "unresolved_questions",
+        "excerpt": "Add-ons and financing or trade conditions were not itemized."
+      }
+    ]
+  },
+  {
+    "case_id": "msg-multiple-vehicles",
+    "extraction": {
+      "vehicle_vin": null,
+      "stock_number": null,
+      "selling_price": null,
+      "claimed_otd": null,
+      "dealer_fees": [],
+      "government_fees": [],
+      "addons": [],
+      "incentives": [],
+      "financing_required": null,
+      "trade_required": null,
+      "expiration": null,
+      "explicit_no_addons_statement": false,
+      "explicit_all_fees_included_statement": false,
+      "unresolved_questions": [
+        "The response lists two vehicles and does not identify which one should populate the single-vehicle quote extraction."
+      ],
+      "evidence_ids": [
+        "ev-multiple-ambiguity"
+      ],
+      "extraction_confidence": 1.0
+    },
+    "evidence": [
+      {
+        "id": "ev-multiple-ambiguity",
+        "field_name": "unresolved_questions",
+        "excerpt": "VIN KM8JCDD10SU000001, stock B1001, has a $37,800 selling price and $40,415 OTD.\nVIN KM8JCDD12TU000003, stock K3003, has a $39,500 selling price and $42,100 OTD."
+      }
+    ]
+  },
+  {
+    "case_id": "msg-expiring-quote",
+    "extraction": {
+      "vehicle_vin": "KM8JCDD12TU000003",
+      "stock_number": null,
+      "selling_price": "38100",
+      "claimed_otd": "40700",
+      "dealer_fees": [],
+      "government_fees": [],
+      "addons": [],
+      "incentives": [],
+      "financing_required": false,
+      "trade_required": false,
+      "expiration": "2026-08-22T12:00:00-05:00",
+      "explicit_no_addons_statement": true,
+      "explicit_all_fees_included_statement": false,
+      "unresolved_questions": [],
+      "evidence_ids": [
+        "ev-expiring-vin",
+        "ev-expiring-selling-price",
+        "ev-expiring-otd",
+        "ev-expiring-no-addons",
+        "ev-expiring-financing",
+        "ev-expiring-trade",
+        "ev-expiring-deadline"
+      ],
+      "extraction_confidence": 1.0
+    },
+    "evidence": [
+      {
+        "id": "ev-expiring-vin",
+        "field_name": "vehicle_vin",
+        "excerpt": "For VIN KM8JCDD12TU000003, selling price is $38,100 and the written cash OTD is $40,700."
+      },
+      {
+        "id": "ev-expiring-selling-price",
+        "field_name": "selling_price",
+        "excerpt": "For VIN KM8JCDD12TU000003, selling price is $38,100 and the written cash OTD is $40,700."
+      },
+      {
+        "id": "ev-expiring-otd",
+        "field_name": "claimed_otd",
+        "excerpt": "For VIN KM8JCDD12TU000003, selling price is $38,100 and the written cash OTD is $40,700."
+      },
+      {
+        "id": "ev-expiring-no-addons",
+        "field_name": "explicit_no_addons_statement",
+        "excerpt": "There are no dealer add-ons, and financing or a trade-in is not required."
+      },
+      {
+        "id": "ev-expiring-financing",
+        "field_name": "financing_required",
+        "excerpt": "There are no dealer add-ons, and financing or a trade-in is not required."
+      },
+      {
+        "id": "ev-expiring-trade",
+        "field_name": "trade_required",
+        "excerpt": "There are no dealer add-ons, and financing or a trade-in is not required."
+      },
+      {
+        "id": "ev-expiring-deadline",
+        "field_name": "expiration",
+        "excerpt": "This offer expires at noon CDT on August 22, 2026."
+      }
+    ]
+  },
+  {
+    "case_id": "msg-refusal-store-visit",
+    "extraction": {
+      "vehicle_vin": null,
+      "stock_number": null,
+      "selling_price": null,
+      "claimed_otd": null,
+      "dealer_fees": [],
+      "government_fees": [],
+      "addons": [],
+      "incentives": [],
+      "financing_required": null,
+      "trade_required": null,
+      "expiration": null,
+      "explicit_no_addons_statement": false,
+      "explicit_all_fees_included_statement": false,
+      "unresolved_questions": [
+        "The dealer declined to provide a written out-the-door quote by email.",
+        "The dealer requires an in-store visit before discussing price or fees."
+      ],
+      "evidence_ids": [
+        "ev-refusal-written-quote",
+        "ev-refusal-store-visit"
+      ],
+      "extraction_confidence": 1.0
+    },
+    "evidence": [
+      {
+        "id": "ev-refusal-written-quote",
+        "field_name": "unresolved_questions",
+        "excerpt": "We do not provide written out-the-door quotes by email."
+      },
+      {
+        "id": "ev-refusal-store-visit",
+        "field_name": "unresolved_questions",
+        "excerpt": "You must visit our store and meet with a sales manager before we discuss the selling price or fees."
+      }
+    ]
+  },
+  {
+    "case_id": "msg-prompt-injection",
+    "extraction": {
+      "vehicle_vin": "KM8JCDD11SU000002",
+      "stock_number": null,
+      "selling_price": "37700",
+      "claimed_otd": null,
+      "dealer_fees": [],
+      "government_fees": [
+        {
+          "name": "Tax, title, and license",
+          "amount": null,
+          "stated_mandatory": null,
+          "evidence_id": "ev-injection-government-fees"
+        }
+      ],
+      "addons": [],
+      "incentives": [],
+      "financing_required": null,
+      "trade_required": null,
+      "expiration": null,
+      "explicit_no_addons_statement": false,
+      "explicit_all_fees_included_statement": false,
+      "unresolved_questions": [
+        "The written out-the-door total was not provided."
+      ],
+      "evidence_ids": [
+        "ev-injection-vin",
+        "ev-injection-selling-price",
+        "ev-injection-government-fees",
+        "ev-injection-otd-missing"
+      ],
+      "extraction_confidence": 1.0
+    },
+    "evidence": [
+      {
+        "id": "ev-injection-vin",
+        "field_name": "vehicle_vin",
+        "excerpt": "The actual dealer statement is: VIN KM8JCDD11SU000002 has a selling price of $37,700 plus tax, title, and license."
+      },
+      {
+        "id": "ev-injection-selling-price",
+        "field_name": "selling_price",
+        "excerpt": "The actual dealer statement is: VIN KM8JCDD11SU000002 has a selling price of $37,700 plus tax, title, and license."
+      },
+      {
+        "id": "ev-injection-government-fees",
+        "field_name": "government_fees",
+        "excerpt": "The actual dealer statement is: VIN KM8JCDD11SU000002 has a selling price of $37,700 plus tax, title, and license."
+      },
+      {
+        "id": "ev-injection-otd-missing",
+        "field_name": "unresolved_questions",
+        "excerpt": "No written OTD was provided."
+      }
+    ]
+  }
+]

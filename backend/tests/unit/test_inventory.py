@@ -59,9 +59,6 @@ def listing(**overrides: object) -> VehicleListing:
         ("advertised_price", "40000.01"),
         ("distance_miles", 40.01),
         ("trim", "SEL"),
-        ("exterior_color", "Black Pearl"),
-        ("features", ["AWD", "damage"]),
-        ("features", ["heated seats"]),
     ],
 )
 def test_filter_candidates_excludes_each_hard_constraint(
@@ -70,6 +67,30 @@ def test_filter_candidates_excludes_each_hard_constraint(
     candidate = listing(**{change: value})
 
     assert filter_candidates(criteria(), [candidate]) == []
+
+
+def test_filter_candidates_rejects_wrong_make() -> None:
+    assert filter_candidates(criteria(), [listing(make="Toyota")]) == []
+
+
+def test_filter_candidates_rejects_wrong_model() -> None:
+    assert filter_candidates(criteria(), [listing(model="Santa Fe Hybrid")]) == []
+
+
+def test_filter_candidates_rejects_wrong_condition() -> None:
+    assert filter_candidates(criteria(), [listing(condition="used")]) == []
+
+
+def test_filter_candidates_enforces_required_features() -> None:
+    assert filter_candidates(criteria(), [listing(features=["heated seats"])]) == []
+
+
+def test_filter_candidates_enforces_excluded_features() -> None:
+    assert filter_candidates(criteria(), [listing(features=["AWD", "damage"])]) == []
+
+
+def test_filter_candidates_enforces_excluded_exterior_colors() -> None:
+    assert filter_candidates(criteria(), [listing(exterior_color="Black Pearl")]) == []
 
 
 def test_filter_candidates_includes_boundaries_and_does_not_require_preferences() -> None:
@@ -82,22 +103,48 @@ def test_filter_candidates_includes_boundaries_and_does_not_require_preferences(
     assert filter_candidates(criteria(), [candidate]) == [candidate]
 
 
+def test_filter_candidates_accepts_exact_and_rejects_above_price_boundary() -> None:
+    exact = listing(id="exact", advertised_price="40000")
+    above = listing(id="above", advertised_price="40000.01")
+
+    assert filter_candidates(criteria(), [exact, above]) == [exact]
+
+
+def test_filter_candidates_accepts_exact_and_rejects_above_distance_boundary() -> None:
+    exact = listing(id="exact", distance_miles=40)
+    above = listing(id="above", distance_miles=40.01)
+
+    assert filter_candidates(criteria(), [exact, above]) == [exact]
+
+
 def test_filter_candidates_enforces_excluded_interior_color() -> None:
     candidate = listing(interior_color="Black leather")
 
     assert filter_candidates(criteria(excluded_interior_colors=["Black"]), [candidate]) == []
 
 
-def test_shortlist_orders_exact_trim_then_color_then_price_then_distance() -> None:
+def test_shortlist_orders_preference_then_price_then_distance_then_id() -> None:
     candidates = [
         listing(id="far", distance_miles=30),
         listing(id="cheap-white", exterior_color="White", advertised_price="37000"),
         listing(id="blue", advertised_price="39000"),
-        listing(id="other-trim", trim="SEL", advertised_price="35000"),
+        listing(id="z-tie", advertised_price="39000"),
+        listing(id="a-tie", advertised_price="39000"),
     ]
     result = shortlist_candidates(criteria(), candidates)
 
-    assert [item.id for item in result] == ["far", "blue", "cheap-white", "other-trim"]
+    assert [item.id for item in result] == ["far", "a-tie", "blue", "z-tie", "cheap-white"]
+
+
+def test_shortlist_honors_interior_preference_without_excluding_nonmatches() -> None:
+    preferred = listing(id="preferred", interior_color="Black", advertised_price="39000")
+    cheaper = listing(id="cheaper", interior_color="Gray", advertised_price="37000")
+
+    result = shortlist_candidates(
+        criteria(preferred_interior_colors=["Black"]), [cheaper, preferred]
+    )
+
+    assert [item.id for item in result] == ["preferred", "cheaper"]
 
 
 async def test_fixture_provider_normalizes_records() -> None:

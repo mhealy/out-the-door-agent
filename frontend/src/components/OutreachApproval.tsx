@@ -78,6 +78,11 @@ type OutreachInteraction = {
   sent_followup_count: number;
   followup_limit: number;
   followup_limit_reached: boolean;
+  latest_response_followup_status:
+    | "PENDING_APPROVAL"
+    | "APPROVED"
+    | "SENT"
+    | null;
   messages: DealerMessage[];
   analysis: QuoteAnalysisResponse | null;
 };
@@ -338,8 +343,12 @@ function FollowupControls({
       <strong>{interaction.sent_followup_count} of {interaction.followup_limit} follow-ups sent</strong>
       {needsClarification && (interaction.followup_limit_reached
         ? <span className="followup-limit-reached">Follow-up limit reached</span>
-        : awaitingApproval
+        : awaitingApproval || interaction.latest_response_followup_status === "PENDING_APPROVAL"
           ? <span className="followup-awaiting-approval">Follow-up awaiting approval</span>
+        : interaction.latest_response_followup_status === "APPROVED"
+          ? <span className="followup-awaiting-approval">Follow-up delivery unconfirmed</span>
+        : interaction.latest_response_followup_status === "SENT"
+          ? <span className="followup-awaiting-approval">Waiting for dealer response</span>
         : <button disabled={preparing} onClick={onPrepare} type="button">
           {preparing ? "Preparing follow-up…" : "Prepare follow-up"}
         </button>)}
@@ -616,7 +625,12 @@ export function OutreachApproval({
   };
 
   const prepareInteractionFollowup = async () => {
-    if (!initialProposal || !interaction || interaction.followup_limit_reached) return;
+    if (
+      !initialProposal
+      || !interaction
+      || interaction.followup_limit_reached
+      || interaction.latest_response_followup_status !== null
+    ) return;
     const missingForComparison = interaction.analysis?.assessment.missing_for_comparison ?? [];
     if (!missingForComparison.length) return;
 

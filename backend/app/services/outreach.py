@@ -161,7 +161,6 @@ class OutreachService:
             if receipt.action_id != action_id:
                 raise ValueError("Messaging provider returned a mismatched action ID.")
         except asyncio.CancelledError:
-            self._repository.mark_send_failed(action_id)
             raise
         except Exception as error:
             self._repository.mark_send_failed(action_id)

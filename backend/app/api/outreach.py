@@ -55,6 +55,8 @@ from app.services.followups import (
     FollowupNotRequiredError,
     FollowupRecipientChangedError,
     FollowupService,
+    FollowupSourceChangedError,
+    FollowupSourceMessageBlockedError,
     UnsupportedFollowupRequirementError,
 )
 from app.services.outreach_interactions import (
@@ -259,6 +261,17 @@ async def prepare_followup(
             "This dealer interaction already has two confirmed sent follow-ups.",
             error,
         ) from error
+    except FollowupSourceMessageBlockedError as error:
+        raise _followup_source_conflict(error) from error
+    except FollowupSourceChangedError as error:
+        raise _conflict(
+            "followup_source_changed",
+            (
+                "A newer dealer response became current while the follow-up "
+                "was drafted. Refresh the interaction and prepare again."
+            ),
+            error,
+        ) from error
     except FollowupRecipientChangedError as error:
         raise _conflict(
             "followup_recipient_changed",
@@ -453,6 +466,31 @@ def _conflict(code: str, message: str, error: Exception) -> HTTPException:
     return HTTPException(
         status_code=409,
         detail={"code": code, "message": message},
+    )
+
+
+def _followup_source_conflict(
+    error: FollowupSourceMessageBlockedError,
+) -> HTTPException:
+    if error.action_status == "PENDING_APPROVAL":
+        return _conflict(
+            "followup_already_pending",
+            "A follow-up for this dealer response is already awaiting approval.",
+            error,
+        )
+    if error.action_status == "APPROVED":
+        return _conflict(
+            "followup_delivery_unconfirmed",
+            "The approved follow-up has an unconfirmed delivery outcome.",
+            error,
+        )
+    return _conflict(
+        "followup_waiting_for_response",
+        (
+            "A follow-up for this response was sent. Wait for a newer "
+            "dealer response before preparing another."
+        ),
+        error,
     )
 
 

@@ -15,6 +15,11 @@ InteractionAnalysisStatus = Literal[
     "ANALYZED",
     "ANALYSIS_FAILED",
 ]
+LatestResponseFollowupStatus = Literal[
+    "PENDING_APPROVAL",
+    "APPROVED",
+    "SENT",
+]
 
 
 class DealerInteraction(BaseModel):
@@ -33,6 +38,7 @@ class DealerInteraction(BaseModel):
     followups: list[OutreachProposal] = Field(default_factory=list)
     sent_followup_count: int = Field(default=0, ge=0, le=2)
     followup_limit: Literal[2] = 2
+    latest_response_followup_status: LatestResponseFollowupStatus | None = None
     analysis: QuoteAnalysisResult | None = None
     analysis_error_code: str | None = None
 

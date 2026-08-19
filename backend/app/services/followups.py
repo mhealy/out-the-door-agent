@@ -27,6 +27,8 @@ from app.persistence.interactions import (
 )
 from app.persistence.outreach import (
     OutreachFollowupLimitReachedError,
+    OutreachFollowupSourceBlockedError,
+    OutreachFollowupSourceChangedError,
     OutreachRecordNotFoundError,
     OutreachRepository,
 )
@@ -125,6 +127,25 @@ class FollowupLimitReachedError(RuntimeError):
 
 class FollowupRecipientChangedError(RuntimeError):
     """The current resolver no longer matches the interaction's saved recipient."""
+
+
+class FollowupSourceMessageBlockedError(RuntimeError):
+    """The latest response already owns an active or sent follow-up."""
+
+    def __init__(
+        self,
+        interaction_id: str,
+        source_message_id: str,
+        action_status: str,
+    ) -> None:
+        super().__init__(source_message_id)
+        self.interaction_id = interaction_id
+        self.source_message_id = source_message_id
+        self.action_status = action_status
+
+
+class FollowupSourceChangedError(RuntimeError):
+    """A newer response became current while the follow-up was drafted."""
 
 
 def derive_followup_requirements(
@@ -333,6 +354,14 @@ class FollowupService:
         if interaction.followup_limit_reached:
             raise FollowupLimitReachedError(interaction.id)
 
+        latest_message = interaction.analysis.message
+        if interaction.latest_response_followup_status is not None:
+            raise FollowupSourceMessageBlockedError(
+                interaction.id,
+                latest_message.id,
+                interaction.latest_response_followup_status,
+            )
+
         requirements = derive_followup_requirements(
             interaction.analysis.assessment
         )
@@ -361,7 +390,6 @@ class FollowupService:
                 if proposal.status == "SENT"
             ],
         ]
-        latest_message = interaction.analysis.message
         context = FollowupDraftContext(
             interaction_id=interaction.id,
             dealer_id=interaction.dealer_id,
@@ -408,4 +436,12 @@ class FollowupService:
             )
         except OutreachFollowupLimitReachedError as error:
             raise FollowupLimitReachedError(interaction.id) from error
+        except OutreachFollowupSourceBlockedError as error:
+            raise FollowupSourceMessageBlockedError(
+                interaction.id,
+                error.source_message_id,
+                error.action_status,
+            ) from error
+        except OutreachFollowupSourceChangedError as error:
+            raise FollowupSourceChangedError(interaction.id) from error
         return self._outreach_repository.get_proposal(action.id)

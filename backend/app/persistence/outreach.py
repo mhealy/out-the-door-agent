@@ -8,6 +8,7 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session
 
 from app.domain.approval import (
+    ActionStatus,
     ApprovalRecord,
     OutreachProposal,
     OutreachVehicleSnapshot,
@@ -37,7 +38,33 @@ class OutreachFollowupLimitReachedError(RuntimeError):
     """The interaction has no unreserved follow-up send round remaining."""
 
 
+class OutreachFollowupSourceBlockedError(RuntimeError):
+    """The source response already has an active or sent follow-up."""
+
+    def __init__(
+        self,
+        interaction_id: str,
+        source_message_id: str,
+        action_id: str,
+        action_status: ActionStatus,
+    ) -> None:
+        super().__init__(source_message_id)
+        self.interaction_id = interaction_id
+        self.source_message_id = source_message_id
+        self.action_id = action_id
+        self.action_status = action_status
+
+
+class OutreachFollowupSourceChangedError(RuntimeError):
+    """The proposed follow-up no longer targets the latest analyzed response."""
+
+
 FOLLOWUP_LIMIT = 2
+FOLLOWUP_SOURCE_BLOCKING_STATUSES: tuple[ActionStatus, ...] = (
+    "APPROVED",
+    "SENT",
+    "PENDING_APPROVAL",
+)
 
 
 def _utc(value: datetime) -> datetime:
@@ -152,6 +179,43 @@ class OutreachRepository:
             self._session.expire_all()
             raise OutreachFollowupLimitReachedError(interaction_id)
 
+        latest_message = self._session.scalar(
+            select(InboundDealerMessageRecord)
+            .where(
+                InboundDealerMessageRecord.interaction_id == interaction_id
+            )
+            .order_by(
+                InboundDealerMessageRecord.created_at.desc(),
+                InboundDealerMessageRecord.id.desc(),
+            )
+            .limit(1)
+            .execution_options(populate_existing=True)
+        )
+        if (
+            latest_message is None
+            or latest_message.id != source_message_id
+            or latest_message.analysis_status != "ANALYZED"
+            or latest_message.analysis_snapshot is None
+        ):
+            self._session.rollback()
+            self._session.expire_all()
+            raise OutreachFollowupSourceChangedError(source_message_id)
+
+        blocker = self.get_source_followup_blocker(
+            interaction_id,
+            source_message_id,
+        )
+        if blocker is not None:
+            blocked_error = OutreachFollowupSourceBlockedError(
+                interaction_id,
+                source_message_id,
+                blocker.id,
+                blocker.status,
+            )
+            self._session.rollback()
+            self._session.expire_all()
+            raise blocked_error
+
         self._session.add(_action_record(action, vehicle))
         self._session.add(
             DealerInteractionFollowupRecord(
@@ -185,6 +249,45 @@ class OutreachRepository:
         if state is None:
             return 0, 0
         return state.sent_count, state.reserved_count
+
+    def get_source_followup_blocker(
+        self,
+        interaction_id: str,
+        source_message_id: str,
+    ) -> ProposedActionRecord | None:
+        records = list(
+            self._session.scalars(
+                select(ProposedActionRecord)
+                .join(
+                    DealerInteractionFollowupRecord,
+                    DealerInteractionFollowupRecord.proposed_action_id
+                    == ProposedActionRecord.id,
+                )
+                .where(
+                    DealerInteractionFollowupRecord.interaction_id
+                    == interaction_id,
+                    DealerInteractionFollowupRecord.source_message_id
+                    == source_message_id,
+                    ProposedActionRecord.action_type == "SEND_FOLLOWUP",
+                    ProposedActionRecord.status.in_(
+                        FOLLOWUP_SOURCE_BLOCKING_STATUSES
+                    ),
+                )
+                .order_by(
+                    ProposedActionRecord.created_at.desc(),
+                    ProposedActionRecord.id.desc(),
+                )
+                .execution_options(populate_existing=True)
+            )
+        )
+        for status in FOLLOWUP_SOURCE_BLOCKING_STATUSES:
+            blocker = next(
+                (record for record in records if record.status == status),
+                None,
+            )
+            if blocker is not None:
+                return blocker
+        return None
 
     def followup_limit_reached(self, interaction_id: str) -> bool:
         return self.get_sent_followup_count(interaction_id) >= FOLLOWUP_LIMIT

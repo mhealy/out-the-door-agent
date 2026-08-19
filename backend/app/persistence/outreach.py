@@ -1,23 +1,30 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
 from datetime import datetime, timezone
 from uuid import uuid4
 
 from sqlalchemy import select, update
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session
 
 from app.domain.approval import (
+    ActionStatus,
     ApprovalRecord,
     OutreachProposal,
     OutreachVehicleSnapshot,
     ProposedAction,
 )
 from app.domain.message import DeliveryReceipt
+from app.domain.outreach_requirements import (
+    OUTREACH_REQUIREMENT_LABELS_BY_ACTION_TYPE,
+)
 from app.domain.vehicle import VehicleListing
 from app.persistence.models import (
     ApprovalRecordModel,
+    DealerInteractionFollowupRecord,
+    DealerInteractionFollowupStateRecord,
     DealerInteractionRecord,
+    InboundDealerMessageRecord,
     OutboundDeliveryRecord,
     ProposedActionRecord,
 )
@@ -25,6 +32,39 @@ from app.persistence.models import (
 
 class OutreachRecordNotFoundError(LookupError):
     """No persisted proposed action exists for the supplied identifier."""
+
+
+class OutreachFollowupLimitReachedError(RuntimeError):
+    """The interaction has no unreserved follow-up send round remaining."""
+
+
+class OutreachFollowupSourceBlockedError(RuntimeError):
+    """The source response already has an active or sent follow-up."""
+
+    def __init__(
+        self,
+        interaction_id: str,
+        source_message_id: str,
+        action_id: str,
+        action_status: ActionStatus,
+    ) -> None:
+        super().__init__(source_message_id)
+        self.interaction_id = interaction_id
+        self.source_message_id = source_message_id
+        self.action_id = action_id
+        self.action_status = action_status
+
+
+class OutreachFollowupSourceChangedError(RuntimeError):
+    """The proposed follow-up no longer targets the latest analyzed response."""
+
+
+FOLLOWUP_LIMIT = 2
+FOLLOWUP_SOURCE_BLOCKING_STATUSES: tuple[ActionStatus, ...] = (
+    "APPROVED",
+    "SENT",
+    "PENDING_APPROVAL",
+)
 
 
 def _utc(value: datetime) -> datetime:
@@ -48,6 +88,26 @@ def _action_from_record(record: ProposedActionRecord) -> ProposedAction:
     )
 
 
+def _action_record(
+    action: ProposedAction,
+    vehicle: OutreachVehicleSnapshot,
+) -> ProposedActionRecord:
+    return ProposedActionRecord(
+        id=action.id,
+        action_type=action.action_type,
+        dealer_id=action.dealer_id,
+        vehicle_id=action.vehicle_id,
+        recipient=action.recipient,
+        subject=action.subject,
+        body=action.body,
+        reason=action.reason,
+        requested_information=list(action.requested_information),
+        requires_approval=action.requires_approval,
+        status="PENDING_APPROVAL",
+        vehicle_snapshot=vehicle.model_dump(mode="json"),
+    )
+
+
 class OutreachRepository:
     """Focused SQLAlchemy persistence for the outbound approval boundary."""
 
@@ -66,20 +126,103 @@ class OutreachRepository:
             dealer_id=vehicle.dealer_id,
             dealer_name=vehicle.dealer_name,
         )
+        self._session.add(_action_record(action, snapshot))
+        self._session.commit()
+        self._session.expire_all()
+
+    def create_followup(
+        self,
+        action: ProposedAction,
+        vehicle: OutreachVehicleSnapshot,
+        interaction_id: str,
+        source_message_id: str,
+    ) -> None:
+        """Persist a follow-up and its interaction link in one transaction."""
+
+        if action.action_type != "SEND_FOLLOWUP":
+            raise ValueError("Only SEND_FOLLOWUP actions can be linked as follow-ups.")
+
+        interaction = self._session.get(DealerInteractionRecord, interaction_id)
+        source_message = self._session.get(
+            InboundDealerMessageRecord,
+            source_message_id,
+        )
+        if interaction is None or source_message is None:
+            raise OutreachRecordNotFoundError(interaction_id)
+        if source_message.interaction_id != interaction_id:
+            raise ValueError("The source message does not belong to the interaction.")
+        if (
+            action.dealer_id != interaction.dealer_id
+            or action.vehicle_id != interaction.vehicle_id
+            or vehicle.dealer_id != interaction.dealer_id
+            or vehicle.id != interaction.vehicle_id
+            or vehicle.model_dump(mode="json") != interaction.vehicle_snapshot
+        ):
+            raise ValueError("The follow-up target does not match the interaction.")
+
+        now = datetime.now(timezone.utc)
+        self._ensure_followup_state(interaction_id, created_at=now)
+        available = self._session.execute(
+            update(DealerInteractionFollowupStateRecord)
+            .where(
+                DealerInteractionFollowupStateRecord.interaction_id
+                == interaction_id,
+                DealerInteractionFollowupStateRecord.sent_count < FOLLOWUP_LIMIT,
+            )
+            .values(
+                sent_count=DealerInteractionFollowupStateRecord.sent_count
+            )
+            .execution_options(synchronize_session=False)
+        )
+        if available.rowcount != 1:
+            self._session.rollback()
+            self._session.expire_all()
+            raise OutreachFollowupLimitReachedError(interaction_id)
+
+        latest_message = self._session.scalar(
+            select(InboundDealerMessageRecord)
+            .where(
+                InboundDealerMessageRecord.interaction_id == interaction_id
+            )
+            .order_by(
+                InboundDealerMessageRecord.created_at.desc(),
+                InboundDealerMessageRecord.id.desc(),
+            )
+            .limit(1)
+            .execution_options(populate_existing=True)
+        )
+        if (
+            latest_message is None
+            or latest_message.id != source_message_id
+            or latest_message.analysis_status != "ANALYZED"
+            or latest_message.analysis_snapshot is None
+        ):
+            self._session.rollback()
+            self._session.expire_all()
+            raise OutreachFollowupSourceChangedError(source_message_id)
+
+        blocker = self.get_source_followup_blocker(
+            interaction_id,
+            source_message_id,
+        )
+        if blocker is not None:
+            blocked_error = OutreachFollowupSourceBlockedError(
+                interaction_id,
+                source_message_id,
+                blocker.id,
+                blocker.status,
+            )
+            self._session.rollback()
+            self._session.expire_all()
+            raise blocked_error
+
+        self._session.add(_action_record(action, vehicle))
         self._session.add(
-            ProposedActionRecord(
-                id=action.id,
-                action_type=action.action_type,
-                dealer_id=action.dealer_id,
-                vehicle_id=action.vehicle_id,
-                recipient=action.recipient,
-                subject=action.subject,
-                body=action.body,
-                reason=action.reason,
-                requested_information=list(action.requested_information),
-                requires_approval=action.requires_approval,
-                status="PENDING_APPROVAL",
-                vehicle_snapshot=snapshot.model_dump(mode="json"),
+            DealerInteractionFollowupRecord(
+                interaction_id=interaction_id,
+                proposed_action_id=action.id,
+                source_message_id=source_message_id,
+                created_at=now,
             )
         )
         self._session.commit()
@@ -91,9 +234,78 @@ class OutreachRepository:
             raise OutreachRecordNotFoundError(action_id)
         return record
 
+    def get_sent_followup_count(self, interaction_id: str) -> int:
+        state = self._session.get(
+            DealerInteractionFollowupStateRecord,
+            interaction_id,
+        )
+        return 0 if state is None else state.sent_count
+
+    def get_followup_counts(self, interaction_id: str) -> tuple[int, int]:
+        state = self._session.get(
+            DealerInteractionFollowupStateRecord,
+            interaction_id,
+        )
+        if state is None:
+            return 0, 0
+        return state.sent_count, state.reserved_count
+
+    def get_source_followup_blocker(
+        self,
+        interaction_id: str,
+        source_message_id: str,
+    ) -> ProposedActionRecord | None:
+        records = list(
+            self._session.scalars(
+                select(ProposedActionRecord)
+                .join(
+                    DealerInteractionFollowupRecord,
+                    DealerInteractionFollowupRecord.proposed_action_id
+                    == ProposedActionRecord.id,
+                )
+                .where(
+                    DealerInteractionFollowupRecord.interaction_id
+                    == interaction_id,
+                    DealerInteractionFollowupRecord.source_message_id
+                    == source_message_id,
+                    ProposedActionRecord.action_type == "SEND_FOLLOWUP",
+                    ProposedActionRecord.status.in_(
+                        FOLLOWUP_SOURCE_BLOCKING_STATUSES
+                    ),
+                )
+                .order_by(
+                    ProposedActionRecord.created_at.desc(),
+                    ProposedActionRecord.id.desc(),
+                )
+                .execution_options(populate_existing=True)
+            )
+        )
+        for status in FOLLOWUP_SOURCE_BLOCKING_STATUSES:
+            blocker = next(
+                (record for record in records if record.status == status),
+                None,
+            )
+            if blocker is not None:
+                return blocker
+        return None
+
+    def followup_limit_reached(self, interaction_id: str) -> bool:
+        return self.get_sent_followup_count(interaction_id) >= FOLLOWUP_LIMIT
+
     def claim_approval(self, action: ProposedActionRecord) -> bool:
         now = datetime.now(timezone.utc)
         snapshot = _action_from_record(action)
+        followup_link = None
+        if action.action_type == "SEND_FOLLOWUP":
+            followup_link = self._session.scalar(
+                select(DealerInteractionFollowupRecord).where(
+                    DealerInteractionFollowupRecord.proposed_action_id
+                    == action.id
+                )
+            )
+            if followup_link is None:
+                raise OutreachRecordNotFoundError(action.id)
+
         result = self._session.execute(
             update(ProposedActionRecord)
             .where(
@@ -107,6 +319,58 @@ class OutreachRepository:
             self._session.rollback()
             self._session.expire_all()
             return False
+
+        if followup_link is not None:
+            # The conditional action update above is intentionally the first write.
+            # On SQLite it serializes this freshness read with analysis persistence;
+            # a stale result rolls the uncommitted approval back to PENDING_APPROVAL.
+            latest_analyzed_message = self._session.scalar(
+                select(InboundDealerMessageRecord)
+                .where(
+                    InboundDealerMessageRecord.interaction_id
+                    == followup_link.interaction_id,
+                    InboundDealerMessageRecord.analysis_status == "ANALYZED",
+                    InboundDealerMessageRecord.analysis_snapshot.is_not(None),
+                )
+                .order_by(
+                    InboundDealerMessageRecord.created_at.desc(),
+                    InboundDealerMessageRecord.id.desc(),
+                )
+                .limit(1)
+                .execution_options(populate_existing=True)
+            )
+            if (
+                latest_analyzed_message is None
+                or latest_analyzed_message.id != followup_link.source_message_id
+            ):
+                source_message_id = followup_link.source_message_id
+                self._session.rollback()
+                self._session.expire_all()
+                raise OutreachFollowupSourceChangedError(source_message_id)
+
+            reserved = self._session.execute(
+                update(DealerInteractionFollowupStateRecord)
+                .where(
+                    DealerInteractionFollowupStateRecord.interaction_id
+                    == followup_link.interaction_id,
+                    (
+                        DealerInteractionFollowupStateRecord.sent_count
+                        + DealerInteractionFollowupStateRecord.reserved_count
+                    )
+                    < FOLLOWUP_LIMIT,
+                )
+                .values(
+                    reserved_count=(
+                        DealerInteractionFollowupStateRecord.reserved_count + 1
+                    )
+                )
+                .execution_options(synchronize_session=False)
+            )
+            if reserved.rowcount != 1:
+                interaction_id = followup_link.interaction_id
+                self._session.rollback()
+                self._session.expire_all()
+                raise OutreachFollowupLimitReachedError(interaction_id)
 
         self._session.add(
             ApprovalRecordModel(
@@ -164,8 +428,48 @@ class OutreachRepository:
 
     def mark_sent(self, action_id: str, receipt: DeliveryReceipt) -> None:
         action = self.get_action(action_id)
-        action.status = "SENT"
-        action.updated_at = datetime.now(timezone.utc)
+        followup_link = None
+        if action.action_type == "SEND_FOLLOWUP":
+            followup_link = self._followup_link(action_id)
+
+        now = datetime.now(timezone.utc)
+        sent = self._session.execute(
+            update(ProposedActionRecord)
+            .where(
+                ProposedActionRecord.id == action_id,
+                ProposedActionRecord.status == "APPROVED",
+            )
+            .values(status="SENT", updated_at=now)
+            .execution_options(synchronize_session=False)
+        )
+        if sent.rowcount != 1:
+            self._session.rollback()
+            self._session.expire_all()
+            raise OutreachRecordNotFoundError(action_id)
+
+        if followup_link is not None:
+            counted = self._session.execute(
+                update(DealerInteractionFollowupStateRecord)
+                .where(
+                    DealerInteractionFollowupStateRecord.interaction_id
+                    == followup_link.interaction_id,
+                    DealerInteractionFollowupStateRecord.reserved_count > 0,
+                    DealerInteractionFollowupStateRecord.sent_count
+                    < FOLLOWUP_LIMIT,
+                )
+                .values(
+                    reserved_count=(
+                        DealerInteractionFollowupStateRecord.reserved_count - 1
+                    ),
+                    sent_count=DealerInteractionFollowupStateRecord.sent_count + 1,
+                )
+                .execution_options(synchronize_session=False)
+            )
+            if counted.rowcount != 1:
+                self._session.rollback()
+                self._session.expire_all()
+                raise OutreachRecordNotFoundError(action_id)
+
         self._session.add(
             OutboundDeliveryRecord(
                 id=str(uuid4()),
@@ -176,31 +480,75 @@ class OutreachRepository:
             )
         )
         if action.action_type == "SEND_INITIAL_QUOTE_REQUEST":
-            self._session.add(
-                DealerInteractionRecord(
-                    id=str(uuid4()),
-                    initial_action_id=action_id,
-                    dealer_id=action.dealer_id,
-                    vehicle_id=action.vehicle_id,
-                    vehicle_snapshot=dict(action.vehicle_snapshot),
-                    created_at=receipt.sent_at,
-                )
+            interaction_id = str(uuid4())
+            self._session.add_all(
+                [
+                    DealerInteractionRecord(
+                        id=interaction_id,
+                        initial_action_id=action_id,
+                        dealer_id=action.dealer_id,
+                        vehicle_id=action.vehicle_id,
+                        vehicle_snapshot=dict(action.vehicle_snapshot),
+                        created_at=receipt.sent_at,
+                    ),
+                    DealerInteractionFollowupStateRecord(
+                        interaction_id=interaction_id,
+                        sent_count=0,
+                        reserved_count=0,
+                        created_at=receipt.sent_at,
+                    ),
+                ]
             )
         self._session.commit()
         self._session.expire_all()
 
     def mark_send_failed(self, action_id: str) -> None:
         action = self.get_action(action_id)
-        action.status = "SEND_FAILED"
-        action.updated_at = datetime.now(timezone.utc)
+        followup_link = None
+        if action.action_type == "SEND_FOLLOWUP":
+            followup_link = self._followup_link(action_id)
+
+        failed = self._session.execute(
+            update(ProposedActionRecord)
+            .where(
+                ProposedActionRecord.id == action_id,
+                ProposedActionRecord.status == "APPROVED",
+            )
+            .values(
+                status="SEND_FAILED",
+                updated_at=datetime.now(timezone.utc),
+            )
+            .execution_options(synchronize_session=False)
+        )
+        if failed.rowcount != 1:
+            self._session.rollback()
+            self._session.expire_all()
+            raise OutreachRecordNotFoundError(action_id)
+
+        if followup_link is not None:
+            released = self._session.execute(
+                update(DealerInteractionFollowupStateRecord)
+                .where(
+                    DealerInteractionFollowupStateRecord.interaction_id
+                    == followup_link.interaction_id,
+                    DealerInteractionFollowupStateRecord.reserved_count > 0,
+                )
+                .values(
+                    reserved_count=(
+                        DealerInteractionFollowupStateRecord.reserved_count - 1
+                    )
+                )
+                .execution_options(synchronize_session=False)
+            )
+            if released.rowcount != 1:
+                self._session.rollback()
+                self._session.expire_all()
+                raise OutreachRecordNotFoundError(action_id)
+
         self._session.commit()
         self._session.expire_all()
 
-    def get_proposal(
-        self,
-        action_id: str,
-        requirement_labels: Mapping[str, str],
-    ) -> OutreachProposal:
+    def get_proposal(self, action_id: str) -> OutreachProposal:
         action = self.get_action(action_id)
         approval_model = self._session.scalar(
             select(ApprovalRecordModel).where(
@@ -233,6 +581,9 @@ class OutreachRepository:
             )
 
         requested_information = list(action.requested_information)
+        requirement_labels = OUTREACH_REQUIREMENT_LABELS_BY_ACTION_TYPE[
+            action.action_type
+        ]
         return OutreachProposal(
             **_action_from_record(action).model_dump(),
             requested_information_labels=[
@@ -245,3 +596,36 @@ class OutreachRepository:
             approval=approval,
             delivery=delivery,
         )
+
+    def _ensure_followup_state(
+        self,
+        interaction_id: str,
+        *,
+        created_at: datetime,
+    ) -> None:
+        """Lazily backfill state for interactions created before this table existed."""
+
+        self._session.execute(
+            sqlite_insert(DealerInteractionFollowupStateRecord)
+            .values(
+                interaction_id=interaction_id,
+                sent_count=0,
+                reserved_count=0,
+                created_at=created_at,
+            )
+            .on_conflict_do_nothing(
+                index_elements=[
+                    DealerInteractionFollowupStateRecord.interaction_id
+                ]
+            )
+        )
+
+    def _followup_link(self, action_id: str) -> DealerInteractionFollowupRecord:
+        link = self._session.scalar(
+            select(DealerInteractionFollowupRecord).where(
+                DealerInteractionFollowupRecord.proposed_action_id == action_id
+            )
+        )
+        if link is None:
+            raise OutreachRecordNotFoundError(action_id)
+        return link

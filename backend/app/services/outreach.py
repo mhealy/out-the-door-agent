@@ -1,50 +1,27 @@
 from __future__ import annotations
 
-from typing import Final
+import asyncio
 from uuid import uuid4
 
 from sqlalchemy.orm import Session
 
 from app.domain.approval import OutreachProposal, ProposedAction
 from app.domain.message import OutboundDealerMessage
+from app.domain.outreach_requirements import (
+    INITIAL_QUOTE_REQUEST_LABELS,
+    INITIAL_QUOTE_REQUEST_REQUIREMENTS,
+)
 from app.domain.vehicle import VehicleListing
 from app.persistence.models import ProposedActionRecord
-from app.persistence.outreach import OutreachRecordNotFoundError, OutreachRepository
+from app.persistence.outreach import (
+    OutreachFollowupLimitReachedError as OutreachFollowupLimitReachedError,
+    OutreachFollowupSourceChangedError as OutreachFollowupSourceChangedError,
+    OutreachRecordNotFoundError,
+    OutreachRepository,
+)
 from app.providers.dealer_contacts import DealerContactResolver
 from app.providers.inventory import InventoryProvider
 from app.providers.messaging import MessagingProvider
-
-
-INITIAL_QUOTE_REQUEST_REQUIREMENTS: Final[tuple[str, ...]] = (
-    "vehicle_identity",
-    "selling_price",
-    "dealer_fees",
-    "mandatory_addons",
-    "government_charges",
-    "out_the_door_total",
-    "incentives_and_eligibility",
-    "financing_requirement",
-    "trade_in_requirement",
-    "quote_expiration",
-)
-
-INITIAL_QUOTE_REQUEST_LABELS: Final[dict[str, str]] = {
-    "vehicle_identity": "Exact VIN and/or stock number for the quoted vehicle",
-    "selling_price": "Selling price before taxes and fees",
-    "dealer_fees": "All dealer and documentation fees",
-    "mandatory_addons": (
-        "All mandatory dealer-installed products or add-ons and their amounts"
-    ),
-    "government_charges": "Taxes, title, license, and other government charges",
-    "out_the_door_total": "Written out-the-door total",
-    "incentives_and_eligibility": (
-        "Every included incentive or rebate and its eligibility conditions"
-    ),
-    "financing_requirement": "Whether the quoted economics require dealer financing",
-    "trade_in_requirement": "Whether the quoted economics require a trade-in",
-    "quote_expiration": "Quote expiration or validity period, if applicable",
-}
-
 
 class CandidateNotFoundError(LookupError):
     """The selected normalized inventory candidate does not exist."""
@@ -184,6 +161,8 @@ class OutreachService:
             receipt = await self._messaging_provider.send(outbound)
             if receipt.action_id != action_id:
                 raise ValueError("Messaging provider returned a mismatched action ID.")
+        except asyncio.CancelledError:
+            raise
         except Exception as error:
             self._repository.mark_send_failed(action_id)
             raise OutreachSendError(action_id) from error
@@ -217,9 +196,6 @@ class OutreachService:
 
     def _get_proposal(self, action_id: str) -> OutreachProposal:
         try:
-            return self._repository.get_proposal(
-                action_id,
-                INITIAL_QUOTE_REQUEST_LABELS,
-            )
+            return self._repository.get_proposal(action_id)
         except OutreachRecordNotFoundError as error:
             raise OutreachProposalNotFoundError(action_id) from error

@@ -10,6 +10,11 @@ from app.providers.dealer_contacts import (
     DealerContactResolver,
     FixtureDealerContactResolver,
 )
+from app.providers.followup_drafting import (
+    FollowupDrafter,
+    OpenAIFollowupDrafter,
+    UnavailableFollowupDrafter,
+)
 from app.providers.inventory import FixtureInventoryProvider, InventoryProvider
 from app.providers.messaging import FixtureMessagingProvider, MessagingProvider
 from app.providers.quote_extraction import (
@@ -56,4 +61,18 @@ def get_quote_extractor() -> QuoteExtractor:
     return OpenAIQuoteExtractor.from_api_key(
         api_key=settings.openai_api_key.get_secret_value(),
         model=settings.quote_extraction_model,
+    )
+
+
+@lru_cache
+def get_followup_drafter() -> FollowupDrafter:
+    settings = get_settings()
+    if (
+        settings.openai_api_key is None
+        or not settings.openai_api_key.get_secret_value().strip()
+    ):
+        return UnavailableFollowupDrafter("OTD_OPENAI_API_KEY is not configured.")
+    return OpenAIFollowupDrafter.from_api_key(
+        api_key=settings.openai_api_key.get_secret_value(),
+        model=settings.followup_drafting_model,
     )

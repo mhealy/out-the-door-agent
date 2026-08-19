@@ -6,7 +6,12 @@ from app.providers.dealer_messages import (
     FixtureDealerMessageProvider,
 )
 from app.providers.criteria import CriteriaInterpreter, FixtureCriteriaInterpreter
+from app.providers.dealer_contacts import (
+    DealerContactResolver,
+    FixtureDealerContactResolver,
+)
 from app.providers.inventory import FixtureInventoryProvider, InventoryProvider
+from app.providers.messaging import FixtureMessagingProvider, MessagingProvider
 from app.providers.quote_extraction import (
     OpenAIQuoteExtractor,
     QuoteExtractor,
@@ -16,6 +21,8 @@ from app.providers.quote_extraction import (
 _criteria_interpreter = FixtureCriteriaInterpreter()
 _inventory_provider = FixtureInventoryProvider()
 _dealer_message_provider = FixtureDealerMessageProvider()
+_dealer_contact_resolver = FixtureDealerContactResolver()
+_messaging_provider = FixtureMessagingProvider()
 
 
 def get_criteria_interpreter() -> CriteriaInterpreter:
@@ -28,6 +35,14 @@ def get_inventory_provider() -> InventoryProvider:
 
 def get_dealer_message_provider() -> DealerMessageProvider:
     return _dealer_message_provider
+
+
+def get_dealer_contact_resolver() -> DealerContactResolver:
+    return _dealer_contact_resolver
+
+
+def get_messaging_provider() -> MessagingProvider:
+    return _messaging_provider
 
 
 @lru_cache

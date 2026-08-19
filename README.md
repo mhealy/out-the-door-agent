@@ -22,6 +22,8 @@ LangGraph orchestration is intentionally deferred to a later issue. Quote extrac
 
 The backend keeps domain contracts, deterministic services, external providers, API routes, orchestration, and persistence in separate packages. The implemented vertical slices stay within those boundaries while later orchestration and purchasing capabilities remain deferred.
 
+`OpenAIQuoteExtractor` is the currently configured concrete extraction adapter. `QuoteAnalysisService`, API code, and domain code depend on the small `QuoteExtractor` protocol and never receive OpenAI Responses objects. A future provider can implement that same contract without changing quote analysis or deterministic evidence policy; this slice intentionally adds no provider routing or generic model configuration layer.
+
 ## Tech stack
 
 - Python 3.12+, FastAPI, Pydantic v2, SQLAlchemy 2, SQLite, OpenAI Python SDK, pytest
@@ -114,20 +116,20 @@ $env:OTD_RUN_LIVE_EVALS="1"
 pytest -m eval tests/evals
 ```
 
-This command requires both explicit `OTD_RUN_LIVE_EVALS=1` consent and `OTD_OPENAI_API_KEY`. Missing consent, missing credentials, or provider failures produce a non-zero result; unrun evaluations are never reported as passing. The harness reports actual aggregate scalar, collection, condition, missing-information, and evidence-attribution metrics. Normal pytest runs from either the backend directory or repository root exclude live evaluations and use injected fakes.
+This command requires both explicit `OTD_RUN_LIVE_EVALS=1` consent and `OTD_OPENAI_API_KEY`. Missing consent, missing credentials, or provider failures produce a non-zero result; unrun evaluations are never reported as passing. The harness reports actual aggregate scalar, collection, condition, source-grounded uncertainty, and evidence-attribution metrics. Normal pytest runs from either the backend directory or repository root exclude live evaluations and use injected fakes.
 
 Reference `gpt-5.6` run on August 19, 2026 (15/15 cases completed):
 
 | Metric | Result |
 |---|---:|
-| Fully correct cases | 12/15 (80.0%) |
+| Fully correct cases | 15/15 (100.0%) |
 | Scalar exact accuracy | 105/105 (100.0%) |
-| Fee/add-on/incentive sets | 58/60 (96.7%) |
+| Fee/add-on/incentive sets | 60/60 (100.0%) |
 | Condition accuracy | 34/34 (100.0%) |
-| Missing-information concepts | 33/34 (97.1%) |
-| Evidence attribution | 185/186 (99.5%) |
+| Source-grounded uncertainty | 33/33 (100.0%) |
+| Evidence attribution | 188/188 (100.0%) |
 
-The reference command exited non-zero because strict per-case assertions preserved three quality failures: two government-fee items were inferred as mandatory without that exact status being stated, and one plus-TTL response produced a reasonable but unlabeled question about “the rest.” These are reported rather than converted into a fabricated pass.
+This post-correction reference command passed all strict assertions. The initial evaluation remains part of the development record: it completed 15/15 calls but passed 12/15 cases, with 105/105 scalar, 58/60 collection, 34/34 condition, 33/34 missing-information-concept, and 185/186 evidence checks. Its two government-fee mandatory-status over-attributions and one omission-derived plus-TTL question led to general semantic corrections rather than fixture-specific exceptions. The uncertainty denominator changed after the labels were narrowed from omission-derived missing information to source-grounded uncertainty, so that metric is not a like-for-like percentage comparison. As with any live model evaluation, a future run may vary and should be reported as observed.
 
 ## Demo mode
 
@@ -138,6 +140,7 @@ Start both applications and open `http://localhost:5173`. The top workspace sear
 - Evidence supports economically important claims.
 - Deterministic code owns arithmetic, constraints, policy, ranking, authorization, and state transitions.
 - LLMs are reserved for bounded semantic interpretation.
+- Quote extraction records what the dealer stated, including explicitly sourced uncertainty; deterministic completeness and follow-up policy belong to later issues.
 - Human approval is required before outbound dealer communication.
 - Fixture providers will exercise the same application paths as live providers.
 - SQLite and a single application deployment are intentional for this assessment.

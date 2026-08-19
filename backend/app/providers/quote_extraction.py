@@ -2,6 +2,7 @@ import json
 from datetime import datetime
 from typing import Any, Protocol
 
+from openai import AsyncOpenAI
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.domain.message import DealerMessage
@@ -30,14 +31,24 @@ Extraction rules:
 - Set financing_required or trade_required to false only when the text explicitly says
   that requirement does not apply. Otherwise use null when unstated.
 - A selling price plus tax/title/license is not an out-the-door total.
+- Set a money item's stated_mandatory to true only when the source explicitly says the
+  charge is required, mandatory, or cannot be removed. Set stated_mandatory to false
+  only when the source explicitly says it is optional, removable, or not required. If
+  the source merely lists or mentions a charge, set stated_mandatory to null. Apply
+  this rule to government fees too; do not infer mandatory status from domain or legal
+  knowledge.
 - Represent tax, title, and license stated without an amount as one government_fees
-  item named "Tax, title, and license" with amount null and stated_mandatory true;
-  do not split the phrase.
+  item named "Tax, title, and license" with amount null; do not split the phrase and
+  do not infer its stated_mandatory value.
 - If multiple vehicles or conflicting identities make a value ambiguous, do not merge
   their terms. Explain the ambiguity in unresolved_questions.
-- Use unresolved_questions for ambiguity, refusal, unconfirmed eligibility, or missing
-  details the dealer explicitly identifies. Keep distinct issues distinct. Do not infer
-  an exhaustive quote-completeness checklist for topics the message never mentions.
+- Use unresolved_questions only for source-supported semantic uncertainty such as an
+  explicit refusal, a detail the dealer explicitly says is unavailable, multiple or
+  ambiguous vehicle terms, explicitly unconfirmed eligibility, or a condition the
+  dealer says is unresolved.
+  Do not create buyer follow-up questions or a missing-information checklist solely
+  because information is absent. Quote-completeness policy and deciding what to ask
+  belong to downstream deterministic application logic, not this extraction task.
 
 Evidence rules:
 - Propose model-local evidence IDs and copy each excerpt exactly as one contiguous,
@@ -50,6 +61,12 @@ Evidence rules:
 - Every populated financial, identity, condition, expiration, or explicit-statement
   field must have matching evidence. Each fee, add-on, and incentive must reference
   evidence for its collection field.
+- Nonempty unresolved_questions must have matching evidence using the canonical
+  unresolved_questions field. Propose a separate exact-source evidence draft for each
+  distinct unresolved concept.
+- Do not propose evidence for null, false-default, or empty fields. Every evidence
+  record must support a populated scalar, a true explicit-statement flag, a nonempty
+  unresolved_questions field, or a fee/add-on/incentive that references its ID.
 - QuoteExtraction.evidence_ids must list every proposed evidence record exactly once.
 - Express money as plain decimal strings such as "37800.00", without currency
   symbols or thousands separators.
@@ -152,6 +169,10 @@ class OpenAIQuoteExtractor:
     def __init__(self, *, client: Any, model: str) -> None:
         self._client = client
         self._model = model
+
+    @classmethod
+    def from_api_key(cls, *, api_key: str, model: str) -> "OpenAIQuoteExtractor":
+        return cls(client=AsyncOpenAI(api_key=api_key), model=model)
 
     async def extract(self, message: DealerMessage) -> QuoteExtractorOutput:
         user_content = json.dumps(

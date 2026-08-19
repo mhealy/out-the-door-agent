@@ -31,13 +31,18 @@ async def test_incomplete_extraction_is_not_filled_by_deterministic_postprocessi
                 extraction={
                     "selling_price": "37450",
                     "claimed_otd": None,
+                    "government_fees": [
+                        {
+                            "name": "Tax, title, and license",
+                            "amount": None,
+                            "stated_mandatory": None,
+                            "evidence_id": "government-fees",
+                        }
+                    ],
                     "financing_required": None,
                     "trade_required": None,
-                    "unresolved_questions": [
-                        "What is the written out-the-door total?",
-                        "Are any dealer add-ons mandatory?",
-                    ],
-                    "evidence_ids": ["selling"],
+                    "unresolved_questions": [],
+                    "evidence_ids": ["selling", "government-fees"],
                     "extraction_confidence": 0.94,
                 },
                 evidence=[
@@ -45,7 +50,12 @@ async def test_incomplete_extraction_is_not_filled_by_deterministic_postprocessi
                         id="selling",
                         field_name="selling_price",
                         excerpt="selling price is $37,450",
-                    )
+                    ),
+                    EvidenceDraft(
+                        id="government-fees",
+                        field_name="government_fees",
+                        excerpt="plus TTL",
+                    ),
                 ],
             )
 
@@ -55,10 +65,13 @@ async def test_incomplete_extraction_is_not_filled_by_deterministic_postprocessi
 
     assert result.extraction.selling_price is not None
     assert result.extraction.claimed_otd is None
+    assert len(result.extraction.government_fees) == 1
+    assert result.extraction.government_fees[0].amount is None
+    assert result.extraction.government_fees[0].stated_mandatory is None
     assert result.extraction.addons == []
     assert result.extraction.financing_required is None
     assert result.extraction.trade_required is None
-    assert result.extraction.unresolved_questions
+    assert result.extraction.unresolved_questions == []
 
 
 async def test_invalid_evidence_is_retried_once_before_analysis_succeeds() -> None:

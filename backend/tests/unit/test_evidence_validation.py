@@ -41,7 +41,8 @@ def output(
             extraction_confidence=0.9,
         ),
         evidence=evidence
-        or [
+        if evidence is not None
+        else [
             EvidenceDraft(
                 id="selling",
                 field_name="selling_price",
@@ -250,3 +251,154 @@ def test_multiple_fields_may_use_the_same_exact_source_excerpt() -> None:
     )
 
     assert [item.excerpt for item in result] == [shared_excerpt, shared_excerpt]
+
+
+def test_source_grounded_unresolved_question_with_valid_evidence_is_accepted() -> None:
+    message = dealer_message("We cannot provide a written OTD quote by email.")
+    extraction = QuoteExtraction(
+        unresolved_questions=["The dealer declined to provide a written OTD quote."],
+        evidence_ids=["unresolved"],
+        extraction_confidence=0.8,
+    )
+
+    result = validate_evidence(
+        message,
+        output(
+            extraction=extraction,
+            evidence=[
+                EvidenceDraft(
+                    id="unresolved",
+                    field_name="unresolved_questions",
+                    excerpt="We cannot provide a written OTD quote by email.",
+                )
+            ],
+        ),
+    )
+
+    assert result[0].field_name == "unresolved_questions"
+
+
+def test_unresolved_question_without_evidence_is_rejected() -> None:
+    extraction = QuoteExtraction(
+        unresolved_questions=["The dealer declined to provide a written OTD quote."],
+        extraction_confidence=0.8,
+    )
+
+    with pytest.raises(EvidenceValidationError, match="unresolved_questions"):
+        validate_evidence(
+            dealer_message("We cannot provide a written OTD quote by email."),
+            output(extraction=extraction, evidence=[]),
+        )
+
+
+def test_unresolved_question_evidence_absent_from_source_is_rejected() -> None:
+    extraction = QuoteExtraction(
+        unresolved_questions=["The dealer declined to provide a written OTD quote."],
+        evidence_ids=["unresolved"],
+        extraction_confidence=0.8,
+    )
+
+    with pytest.raises(EvidenceValidationError, match="does not occur"):
+        validate_evidence(
+            dealer_message("Please visit our store."),
+            output(
+                extraction=extraction,
+                evidence=[
+                    EvidenceDraft(
+                        id="unresolved",
+                        field_name="unresolved_questions",
+                        excerpt="We cannot provide a written OTD quote by email.",
+                    )
+                ],
+            ),
+        )
+
+
+def test_unresolved_question_evidence_requires_its_canonical_field() -> None:
+    extraction = QuoteExtraction(
+        unresolved_questions=["The dealer declined to provide a written OTD quote."],
+        evidence_ids=["unresolved"],
+        extraction_confidence=0.8,
+    )
+
+    with pytest.raises(EvidenceValidationError, match="unresolved_questions"):
+        validate_evidence(
+            dealer_message("We cannot provide a written OTD quote by email."),
+            output(
+                extraction=extraction,
+                evidence=[
+                    EvidenceDraft(
+                        id="unresolved",
+                        field_name="claimed_otd",
+                        excerpt="We cannot provide a written OTD quote by email.",
+                    )
+                ],
+            ),
+        )
+
+
+def test_evidence_not_associated_with_a_populated_claim_is_rejected() -> None:
+    message = dealer_message("Selling price: $37,800. Friendly dealership.")
+    extraction = QuoteExtraction(
+        selling_price="37800",
+        evidence_ids=["selling", "orphan"],
+        extraction_confidence=0.8,
+    )
+
+    with pytest.raises(EvidenceValidationError, match="not associated"):
+        validate_evidence(
+            message,
+            output(
+                extraction=extraction,
+                evidence=[
+                    EvidenceDraft(
+                        id="selling",
+                        field_name="selling_price",
+                        excerpt="Selling price: $37,800.",
+                    ),
+                    EvidenceDraft(
+                        id="orphan",
+                        field_name="claimed_otd",
+                        excerpt="Friendly dealership.",
+                    ),
+                ],
+            ),
+        )
+
+
+def test_unreferenced_evidence_for_a_populated_collection_is_rejected() -> None:
+    message = dealer_message(
+        "Documentation fee: $225. Another dealer-fee sentence appears here."
+    )
+    extraction = QuoteExtraction(
+        dealer_fees=[
+            MoneyItem(
+                name="Documentation fee",
+                amount="225",
+                stated_mandatory=None,
+                evidence_id="used",
+            )
+        ],
+        evidence_ids=["used", "orphan"],
+        extraction_confidence=0.8,
+    )
+
+    with pytest.raises(EvidenceValidationError, match="orphan"):
+        validate_evidence(
+            message,
+            output(
+                extraction=extraction,
+                evidence=[
+                    EvidenceDraft(
+                        id="used",
+                        field_name="dealer_fees",
+                        excerpt="Documentation fee: $225.",
+                    ),
+                    EvidenceDraft(
+                        id="orphan",
+                        field_name="dealer_fees",
+                        excerpt="Another dealer-fee sentence appears here.",
+                    ),
+                ],
+            ),
+        )

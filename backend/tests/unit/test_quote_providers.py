@@ -10,6 +10,7 @@ from app.providers.dealer_messages import FixtureDealerMessageProvider
 from app.providers.quote_extraction import (
     EvidenceDraft,
     OpenAIQuoteExtractor,
+    QUOTE_EXTRACTION_SYSTEM_PROMPT,
     QuoteExtractionError,
     QuoteExtractorOutput,
 )
@@ -25,6 +26,18 @@ async def test_fixture_message_provider_loads_typed_inbound_messages() -> None:
     assert all(isinstance(message, DealerMessage) for message in messages)
     assert "$37,450 plus tax, title, and license" in incomplete.body
     assert incomplete.source_provider == "fixture"
+
+
+def test_quote_extraction_prompt_preserves_source_semantic_boundaries() -> None:
+    prompt = " ".join(QUOTE_EXTRACTION_SYSTEM_PROMPT.casefold().split())
+
+    assert "merely lists or mentions" in prompt
+    assert "stated_mandatory to null" in prompt
+    assert "optional" in prompt and "stated_mandatory to false" in prompt
+    assert "do not create buyer follow-up questions" in prompt
+    assert "solely because information is absent" in prompt
+    assert "dealer explicitly says is unavailable" in prompt
+    assert "separate exact-source evidence draft" in prompt
 
 
 async def test_openai_extractor_uses_structured_output_without_tools() -> None:

@@ -63,6 +63,37 @@ def _require_scalar_evidence(
             raise EvidenceValidationError(
                 f"Extracted field '{field_name}' has no matching evidence."
             )
+    if extraction.unresolved_questions and not evidence_by_field.get(
+        "unresolved_questions"
+    ):
+        raise EvidenceValidationError(
+            "Extracted field 'unresolved_questions' has no matching evidence."
+        )
+
+
+def _associated_evidence_ids(
+    extraction: QuoteExtraction,
+    drafts: list[EvidenceDraft],
+    item_references: list[tuple[str, str]],
+) -> set[str]:
+    populated_fields = {
+        field_name
+        for field_name in MATERIAL_SCALAR_FIELDS
+        if getattr(extraction, field_name) is not None
+    }
+    populated_fields.update(
+        field_name
+        for field_name in EXPLICIT_STATEMENT_FIELDS
+        if getattr(extraction, field_name)
+    )
+    if extraction.unresolved_questions:
+        populated_fields.add("unresolved_questions")
+
+    associated_ids = {
+        draft.id for draft in drafts if draft.field_name in populated_fields
+    }
+    associated_ids.update(reference_id for reference_id, _ in item_references)
+    return associated_ids
 
 
 def validate_evidence(
@@ -131,6 +162,17 @@ def validate_evidence(
                 f"Evidence '{reference_id}' supports '{actual_field}', not "
                 f"'{expected_field}'."
             )
+
+    orphan_ids = sorted(
+        known_ids
+        - _associated_evidence_ids(output.extraction, drafts, item_references)
+    )
+    if orphan_ids:
+        raise EvidenceValidationError(
+            "Evidence record(s) are not associated with a populated extraction claim: "
+            + ", ".join(orphan_ids)
+            + "."
+        )
 
     timestamp = created_at or datetime.now(timezone.utc)
     return [

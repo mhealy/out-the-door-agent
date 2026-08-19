@@ -113,6 +113,12 @@ select {
   margin-top: 1.5rem;
 }
 
+.analysis-stack {
+  display: grid;
+  min-width: 0;
+  gap: 1rem;
+}
+
 .analysis-panel,
 .evidence-drawer {
   min-width: 0;
@@ -171,6 +177,143 @@ select {
   background: #e3eee5;
   font-size: 0.78rem;
   font-weight: 700;
+}
+
+.assessment-intro {
+  max-width: 34rem;
+  margin: 0.55rem 0 0;
+  color: #657269;
+  line-height: 1.5;
+}
+
+.assessment-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.65rem;
+  margin: 1.25rem 0;
+}
+
+.assessment-card {
+  min-width: 0;
+  padding: 0.9rem;
+  border: 1px solid #d8e1d9;
+  border-radius: 0.7rem;
+  background: #f5f7f3;
+}
+
+.assessment-card dt {
+  color: #657269;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.assessment-card dd {
+  margin: 0.5rem 0 0;
+}
+
+.assessment-result {
+  width: fit-content;
+  padding: 0.25rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.82rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+}
+
+.assessment-result.is-yes {
+  color: #205b37;
+  background: #dcefe2;
+}
+
+.assessment-result.is-no {
+  color: #8b2424;
+  background: #f7dddd;
+}
+
+.assessment-result.is-unknown {
+  color: #765314;
+  background: #f5e9c7;
+}
+
+.policy-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.policy-group {
+  min-width: 0;
+  padding: 0.9rem;
+  border: 1px solid #d8e1d9;
+  border-radius: 0.7rem;
+}
+
+.policy-group h4,
+.reconciliation-detail h4 {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.policy-complete {
+  margin: 0.65rem 0 0;
+  color: #315b40;
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+
+.policy-list {
+  display: grid;
+  gap: 0.65rem;
+  padding: 0;
+  margin: 0.75rem 0 0;
+  list-style: none;
+}
+
+.policy-list li {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.policy-list code {
+  width: fit-content;
+  color: #7e2f2f;
+  font-size: 0.72rem;
+}
+
+.policy-list span {
+  color: #45534a;
+  font-size: 0.87rem;
+  line-height: 1.4;
+}
+
+.reconciliation-detail {
+  padding-top: 1rem;
+  margin-top: 1rem;
+  border-top: 1px solid #d8e1d9;
+}
+
+.reconciliation-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.reconciliation-heading strong {
+  font-variant-numeric: tabular-nums;
+}
+
+.reconciliation-detail p {
+  margin: 0.55rem 0 0;
+  color: #45534a;
+  line-height: 1.5;
+}
+
+.reconciliation-detail .formula-note {
+  color: #657269;
+  font-size: 0.8rem;
 }
 
 .fact-grid {
@@ -335,7 +478,7 @@ button.secondary-button {
   main { padding: 3rem 1rem; }
   .quote-analysis-form { align-items: stretch; flex-direction: column; }
   .quote-analysis-form button { width: 100%; }
-  .fact-grid, .evidence-meta { grid-template-columns: 1fr; }
+  .fact-grid, .evidence-meta, .assessment-grid, .policy-grid { grid-template-columns: 1fr; }
   .panel-heading { align-items: flex-start; flex-direction: column; }
   .evidence-drawer { right: 1rem; bottom: 1rem; width: calc(100vw - 2rem); max-height: calc(100vh - 2rem); }
 }

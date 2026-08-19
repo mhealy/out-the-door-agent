@@ -5,12 +5,12 @@ from pydantic import ValidationError
 
 from app.domain.message import DeliveryReceipt, OutboundDealerMessage
 from app.domain.vehicle import VehicleListing
-from app.providers.messaging import (
+from app.providers.dealer_contacts import (
     FIXTURE_DEALER_CONTACTS,
     DealerContactNotFoundError,
-    FixtureMessagingProvider,
-    resolve_fixture_dealer_contact,
+    FixtureDealerContactResolver,
 )
+from app.providers.messaging import FixtureMessagingProvider
 from app.services.outreach import (
     INITIAL_QUOTE_REQUEST_LABELS,
     INITIAL_QUOTE_REQUEST_REQUIREMENTS,
@@ -143,8 +143,10 @@ def test_initial_quote_request_does_not_request_privileged_buyer_actions() -> No
 
 
 def test_fixture_contacts_are_central_complete_and_clearly_fictitious() -> None:
+    resolver = FixtureDealerContactResolver()
+
     assert set(FIXTURE_DEALER_CONTACTS) == {"austin", "baytown", "houston", "katy"}
-    assert resolve_fixture_dealer_contact("baytown") == "quotes@baytown.example.test"
+    assert resolver.resolve("baytown") == "quotes@baytown.example.test"
     assert all(
         recipient.endswith(".example.test")
         for recipient in FIXTURE_DEALER_CONTACTS.values()
@@ -152,8 +154,10 @@ def test_fixture_contacts_are_central_complete_and_clearly_fictitious() -> None:
 
 
 def test_unknown_fixture_dealer_contact_fails_visibly() -> None:
+    resolver = FixtureDealerContactResolver()
+
     with pytest.raises(DealerContactNotFoundError, match="unknown-dealer"):
-        resolve_fixture_dealer_contact("unknown-dealer")
+        resolver.resolve("unknown-dealer")
 
 
 async def test_fixture_messaging_provider_uses_typed_transport_and_is_inspectable() -> None:
@@ -161,7 +165,7 @@ async def test_fixture_messaging_provider_uses_typed_transport_and_is_inspectabl
     action = compose_initial_quote_request(
         action_id="proposal-fixture-send",
         vehicle=_listing(),
-        recipient=resolve_fixture_dealer_contact("baytown"),
+        recipient="quotes@alternate.example.test",
     )
     message = OutboundDealerMessage(
         action_id=action.id,
@@ -178,7 +182,7 @@ async def test_fixture_messaging_provider_uses_typed_transport_and_is_inspectabl
     assert receipt.provider == "fixture"
     assert receipt.external_message_id == "fixture-proposal-fixture-send"
     assert provider.sent_messages == [message]
-    assert provider.sent_messages[0].recipient.endswith(".example.test")
+    assert provider.sent_messages[0].recipient == "quotes@alternate.example.test"
 
 
 def test_delivery_receipt_normalizes_aware_timestamps_and_rejects_naive_values() -> None:

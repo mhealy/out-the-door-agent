@@ -12,7 +12,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import text
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.dependencies import get_messaging_provider
+from app.dependencies import get_dealer_contact_resolver, get_messaging_provider
 from app.domain.message import DeliveryReceipt, OutboundDealerMessage
 from app.main import app
 from app.persistence.db import build_engine, create_schema, get_session
@@ -48,6 +48,16 @@ class SlowRecordingMessagingProvider(RecordingMessagingProvider):
     async def send(self, message: OutboundDealerMessage) -> DeliveryReceipt:
         sleep(0.1)
         return await super().send(message)
+
+
+class AlternateDealerContactResolver:
+    def __init__(self, recipient: str) -> None:
+        self.recipient = recipient
+        self.calls: list[str] = []
+
+    def resolve(self, dealer_id: str) -> str:
+        self.calls.append(dealer_id)
+        return self.recipient
 
 
 @pytest.fixture
@@ -136,6 +146,41 @@ def test_prepare_inspect_and_approve_persist_exact_content_across_requests(
     inspected_after_send = client.get(f"/outreach/proposals/{prepared['id']}")
     assert inspected_after_send.status_code == 200
     assert inspected_after_send.json() == sent
+
+
+def test_injected_contact_resolver_owns_the_persisted_and_delivered_recipient(
+    outreach_client: tuple[
+        TestClient, RecordingMessagingProvider, sessionmaker[Session]
+    ],
+) -> None:
+    client, provider, session_factory = outreach_client
+    alternate_recipient = "quotes@alternate.example.test"
+    resolver = AlternateDealerContactResolver(alternate_recipient)
+    app.dependency_overrides[get_dealer_contact_resolver] = lambda: resolver
+
+    prepared = _prepare(client)
+
+    assert resolver.calls == ["baytown"]
+    assert prepared["recipient"] == alternate_recipient
+    with session_factory() as session:
+        assert session.scalar(
+            text("select recipient from proposed_actions where id = :action_id"),
+            {"action_id": prepared["id"]},
+        ) == alternate_recipient
+
+    inspected = client.get(f"/outreach/proposals/{prepared['id']}")
+    assert inspected.status_code == 200
+    assert inspected.json()["recipient"] == alternate_recipient
+
+    approved = client.post(f"/outreach/proposals/{prepared['id']}/approve", json={})
+
+    assert approved.status_code == 200
+    assert approved.json()["approval"]["action_snapshot"]["recipient"] == (
+        alternate_recipient
+    )
+    assert len(provider.calls) == 1
+    assert provider.calls[0].recipient == alternate_recipient
+    assert resolver.calls == ["baytown"]
 
 
 def test_approval_is_persisted_before_the_provider_side_effect(

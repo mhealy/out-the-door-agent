@@ -1,7 +1,7 @@
 from datetime import datetime
 from decimal import Decimal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class MoneyItem(BaseModel):
@@ -46,6 +46,16 @@ class QuoteAssessment(BaseModel):
     missing_for_comparison: list[str] = Field(default_factory=list)
     missing_for_transparency: list[str] = Field(default_factory=list)
     reconciliation_difference: Decimal | None = None
+
+
+class QuoteAssessmentContext(BaseModel):
+    """Application-owned identity expected for the dealer response."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    expected_vehicle_id: str | None = None
+    expected_vin: str | None = None
+    expected_stock_number: str | None = None
 
 
 class InteractionMetrics(BaseModel):

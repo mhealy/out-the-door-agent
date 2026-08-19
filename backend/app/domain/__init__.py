@@ -10,6 +10,7 @@ from app.domain.quote import (
     InteractionMetrics,
     MoneyItem,
     QuoteAssessment,
+    QuoteAssessmentContext,
     QuoteExtraction,
 )
 from app.domain.vehicle import VehicleListing
@@ -24,6 +25,7 @@ __all__ = [
     "MoneyItem",
     "ProposedAction",
     "QuoteAssessment",
+    "QuoteAssessmentContext",
     "QuoteExtraction",
     "VehicleListing",
     "VehicleSearchCriteria",

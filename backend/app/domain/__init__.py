@@ -3,6 +3,7 @@
 from app.domain.approval import ProposedAction
 from app.domain.criteria import CriteriaExtractionResult, VehicleSearchCriteria
 from app.domain.evidence import Evidence
+from app.domain.message import DealerMessage
 from app.domain.quote import (
     ComparisonResult,
     Incentive,
@@ -16,6 +17,7 @@ from app.domain.vehicle import VehicleListing
 __all__ = [
     "ComparisonResult",
     "CriteriaExtractionResult",
+    "DealerMessage",
     "Evidence",
     "Incentive",
     "InteractionMetrics",

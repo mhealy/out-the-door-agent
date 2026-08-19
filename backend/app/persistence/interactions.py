@@ -12,9 +12,11 @@ from app.domain.interaction import DealerInteraction
 from app.domain.message import DealerMessage
 from app.domain.quote import QuoteAnalysisResult
 from app.persistence.models import (
+    DealerInteractionFollowupRecord,
     DealerInteractionRecord,
     InboundDealerMessageRecord,
 )
+from app.persistence.outreach import OutreachRepository
 
 
 class InteractionRecordNotFoundError(LookupError):
@@ -230,6 +232,27 @@ class InteractionRepository:
             )
         )
         messages = [dealer_message_from_record(record) for record in records]
+        followup_links = list(
+            self._session.scalars(
+                select(DealerInteractionFollowupRecord)
+                .where(
+                    DealerInteractionFollowupRecord.interaction_id
+                    == interaction.id
+                )
+                .order_by(
+                    DealerInteractionFollowupRecord.created_at,
+                    DealerInteractionFollowupRecord.proposed_action_id,
+                )
+            )
+        )
+        outreach_repository = OutreachRepository(self._session)
+        followups = [
+            outreach_repository.get_proposal(link.proposed_action_id)
+            for link in followup_links
+        ]
+        sent_followup_count = outreach_repository.get_sent_followup_count(
+            interaction.id
+        )
 
         analysis = None
         analysis_status = "AWAITING_RESPONSE"
@@ -258,6 +281,8 @@ class InteractionRepository:
             created_at=_utc(interaction.created_at),
             analysis_status=analysis_status,
             messages=messages,
+            followups=followups,
+            sent_followup_count=sent_followup_count,
             analysis=analysis,
             analysis_error_code=analysis_error_code,
         )

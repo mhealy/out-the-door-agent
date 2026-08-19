@@ -8,6 +8,14 @@ from app.domain.approval import (
 )
 from app.domain.criteria import CriteriaExtractionResult, VehicleSearchCriteria
 from app.domain.evidence import Evidence
+from app.domain.followup import (
+    FollowupConversationMessage,
+    FollowupDraft,
+    FollowupDraftContext,
+    FollowupDraftRequest,
+    FollowupRequirement,
+    ValidatedFollowupDraft,
+)
 from app.domain.interaction import DealerInteraction
 from app.domain.message import DealerMessage, DeliveryReceipt, OutboundDealerMessage
 from app.domain.quote import (
@@ -29,6 +37,11 @@ __all__ = [
     "DealerMessage",
     "DeliveryReceipt",
     "Evidence",
+    "FollowupConversationMessage",
+    "FollowupDraft",
+    "FollowupDraftContext",
+    "FollowupDraftRequest",
+    "FollowupRequirement",
     "Incentive",
     "InteractionMetrics",
     "MoneyItem",
@@ -43,4 +56,5 @@ __all__ = [
     "QuoteExtraction",
     "VehicleListing",
     "VehicleSearchCriteria",
+    "ValidatedFollowupDraft",
 ]

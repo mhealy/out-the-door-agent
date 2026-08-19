@@ -4,8 +4,10 @@ from typing import Any
 from sqlalchemy import (
     JSON,
     Boolean,
+    CheckConstraint,
     DateTime,
     ForeignKey,
+    Integer,
     String,
     Text,
     UniqueConstraint,
@@ -89,6 +91,51 @@ class DealerInteractionRecord(Base):
     dealer_id: Mapped[str] = mapped_column(String(128))
     vehicle_id: Mapped[str] = mapped_column(String(128))
     vehicle_snapshot: Mapped[dict[str, Any]] = mapped_column(JSON())
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+
+class DealerInteractionFollowupRecord(Base):
+    """Link one immutable follow-up proposal to its existing interaction."""
+
+    __tablename__ = "dealer_interaction_followups"
+
+    proposed_action_id: Mapped[str] = mapped_column(
+        ForeignKey("proposed_actions.id"), primary_key=True
+    )
+    interaction_id: Mapped[str] = mapped_column(
+        ForeignKey("dealer_interactions.id"), index=True
+    )
+    source_message_id: Mapped[str] = mapped_column(
+        ForeignKey("inbound_dealer_messages.id"), index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+
+class DealerInteractionFollowupStateRecord(Base):
+    """Atomic sent/reserved round accounting for one dealer interaction."""
+
+    __tablename__ = "dealer_interaction_followup_states"
+    __table_args__ = (
+        CheckConstraint("sent_count >= 0", name="ck_followup_state_sent_nonnegative"),
+        CheckConstraint(
+            "reserved_count >= 0",
+            name="ck_followup_state_reserved_nonnegative",
+        ),
+        CheckConstraint(
+            "sent_count + reserved_count <= 2",
+            name="ck_followup_state_round_limit",
+        ),
+    )
+
+    interaction_id: Mapped[str] = mapped_column(
+        ForeignKey("dealer_interactions.id"), primary_key=True
+    )
+    sent_count: Mapped[int] = mapped_column(Integer(), default=0)
+    reserved_count: Mapped[int] = mapped_column(Integer(), default=0)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )

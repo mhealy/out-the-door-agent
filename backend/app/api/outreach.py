@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.dependencies import (
     get_dealer_contact_resolver,
     get_dealer_message_provider,
+    get_followup_drafter,
     get_inventory_provider,
     get_messaging_provider,
     get_quote_extractor,
@@ -24,6 +25,11 @@ from app.providers.dealer_messages import (
     DemoResponseFixtureNotFoundError,
 )
 from app.providers.messaging import MessagingProvider
+from app.providers.followup_drafting import (
+    FollowupDrafter,
+    FollowupDrafterUnavailableError,
+    FollowupDraftingError,
+)
 from app.providers.quote_extraction import (
     QuoteExtractionError,
     QuoteExtractor,
@@ -36,10 +42,20 @@ from app.services.outreach import (
     OutreachActionAlreadySentError,
     OutreachActionNotApprovableError,
     OutreachActionNotRejectableError,
+    OutreachFollowupLimitReachedError,
     OutreachProposalNotFoundError,
     OutreachRetryRequiresNewProposalError,
     OutreachSendError,
     OutreachService,
+)
+from app.services.followups import (
+    FollowupDraftValidationError,
+    FollowupLimitReachedError,
+    FollowupNotAvailableError,
+    FollowupNotRequiredError,
+    FollowupRecipientChangedError,
+    FollowupService,
+    UnsupportedFollowupRequirementError,
 )
 from app.services.outreach_interactions import (
     InteractionAnalysisFailedError,
@@ -63,6 +79,10 @@ class DecisionRequest(BaseModel):
 
 
 class DemoResponseReleaseRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+
+class PrepareFollowupRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
@@ -91,6 +111,18 @@ def _interaction_service(
         message_provider=message_provider,
         quote_extractor=quote_extractor,
         inventory_provider=inventory_provider,
+    )
+
+
+def _followup_service(
+    session: Session,
+    dealer_contact_resolver: DealerContactResolver,
+    drafter: FollowupDrafter,
+) -> FollowupService:
+    return FollowupService(
+        session=session,
+        dealer_contact_resolver=dealer_contact_resolver,
+        drafter=drafter,
     )
 
 
@@ -175,6 +207,88 @@ def inspect_interaction(
             detail={
                 "code": "outreach_interaction_not_found",
                 "message": "The proposed action has no confirmed dealer interaction.",
+            },
+        ) from error
+
+
+@router.post(
+    "/{action_id}/followups",
+    response_model=OutreachProposal,
+    status_code=status.HTTP_201_CREATED,
+)
+async def prepare_followup(
+    action_id: str,
+    session: Annotated[Session, Depends(get_session)],
+    dealer_contact_resolver: Annotated[
+        DealerContactResolver, Depends(get_dealer_contact_resolver)
+    ],
+    drafter: Annotated[FollowupDrafter, Depends(get_followup_drafter)],
+    _: Annotated[PrepareFollowupRequest | None, Body()] = None,
+) -> OutreachProposal:
+    try:
+        return await _followup_service(
+            session,
+            dealer_contact_resolver,
+            drafter,
+        ).prepare(action_id)
+    except OutreachProposalNotFoundError as error:
+        raise _proposal_not_found(error) from error
+    except DealerContactNotFoundError as error:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "dealer_contact_not_found",
+                "message": "No safe fixture contact is configured for this dealer.",
+            },
+        ) from error
+    except FollowupNotAvailableError as error:
+        raise _conflict(
+            "followup_not_available",
+            "A follow-up requires a latest analyzed response on this interaction.",
+            error,
+        ) from error
+    except FollowupNotRequiredError as error:
+        raise _conflict(
+            "followup_not_required",
+            "Deterministic comparison policy has no information left to request.",
+            error,
+        ) from error
+    except FollowupLimitReachedError as error:
+        raise _conflict(
+            "followup_limit_reached",
+            "This dealer interaction already has two confirmed sent follow-ups.",
+            error,
+        ) from error
+    except FollowupRecipientChangedError as error:
+        raise _conflict(
+            "followup_recipient_changed",
+            "The application-owned dealer contact changed; prepare a new interaction.",
+            error,
+        ) from error
+    except UnsupportedFollowupRequirementError as error:
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "code": "invalid_followup_requirement_policy",
+                "message": "The persisted assessment contains an unsupported gap.",
+            },
+        ) from error
+    except FollowupDrafterUnavailableError as error:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "followup_drafter_unavailable",
+                "message": "Follow-up drafting is not configured.",
+            },
+        ) from error
+    except (FollowupDraftingError, FollowupDraftValidationError) as error:
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "code": "invalid_followup_draft",
+                "message": (
+                    "The model did not return a safe, requirement-complete follow-up."
+                ),
             },
         ) from error
 
@@ -271,6 +385,12 @@ async def approve_outreach(
         raise _conflict(
             "outreach_retry_requires_new_proposal",
             "Delivery was not confirmed. Review the prior attempt before preparing a new proposal.",
+            error,
+        ) from error
+    except OutreachFollowupLimitReachedError as error:
+        raise _conflict(
+            "followup_limit_reached",
+            "This dealer interaction has no remaining confirmed follow-up slot.",
             error,
         ) from error
     except OutreachActionNotApprovableError as error:

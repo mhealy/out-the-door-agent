@@ -321,6 +321,33 @@ class OutreachRepository:
             return False
 
         if followup_link is not None:
+            # The conditional action update above is intentionally the first write.
+            # On SQLite it serializes this freshness read with analysis persistence;
+            # a stale result rolls the uncommitted approval back to PENDING_APPROVAL.
+            latest_analyzed_message = self._session.scalar(
+                select(InboundDealerMessageRecord)
+                .where(
+                    InboundDealerMessageRecord.interaction_id
+                    == followup_link.interaction_id,
+                    InboundDealerMessageRecord.analysis_status == "ANALYZED",
+                    InboundDealerMessageRecord.analysis_snapshot.is_not(None),
+                )
+                .order_by(
+                    InboundDealerMessageRecord.created_at.desc(),
+                    InboundDealerMessageRecord.id.desc(),
+                )
+                .limit(1)
+                .execution_options(populate_existing=True)
+            )
+            if (
+                latest_analyzed_message is None
+                or latest_analyzed_message.id != followup_link.source_message_id
+            ):
+                source_message_id = followup_link.source_message_id
+                self._session.rollback()
+                self._session.expire_all()
+                raise OutreachFollowupSourceChangedError(source_message_id)
+
             reserved = self._session.execute(
                 update(DealerInteractionFollowupStateRecord)
                 .where(

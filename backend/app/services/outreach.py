@@ -15,6 +15,7 @@ from app.domain.vehicle import VehicleListing
 from app.persistence.models import ProposedActionRecord
 from app.persistence.outreach import (
     OutreachFollowupLimitReachedError as OutreachFollowupLimitReachedError,
+    OutreachFollowupSourceChangedError as OutreachFollowupSourceChangedError,
     OutreachRecordNotFoundError,
     OutreachRepository,
 )

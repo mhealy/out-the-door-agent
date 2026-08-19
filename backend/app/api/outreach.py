@@ -43,6 +43,7 @@ from app.services.outreach import (
     OutreachActionNotApprovableError,
     OutreachActionNotRejectableError,
     OutreachFollowupLimitReachedError,
+    OutreachFollowupSourceChangedError,
     OutreachProposalNotFoundError,
     OutreachRetryRequiresNewProposalError,
     OutreachSendError,
@@ -404,6 +405,12 @@ async def approve_outreach(
         raise _conflict(
             "followup_limit_reached",
             "This dealer interaction has no remaining confirmed follow-up slot.",
+            error,
+        ) from error
+    except OutreachFollowupSourceChangedError as error:
+        raise _conflict(
+            "followup_source_changed",
+            "A newer dealer response was analyzed. Prepare a new follow-up.",
             error,
         ) from error
     except OutreachActionNotApprovableError as error:

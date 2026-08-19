@@ -1093,7 +1093,7 @@ def test_newer_analyzed_source_allows_second_but_two_sent_rounds_block_third(
     ]
 
 
-def test_concurrent_distinct_approvals_cannot_exceed_the_remaining_slot(
+def test_concurrent_stale_and_current_approvals_cannot_exceed_remaining_slot(
     followup_client: tuple[
         TestClient,
         RecordingMessagingProvider,
@@ -1147,8 +1147,14 @@ def test_concurrent_distinct_approvals_cannot_exceed_the_remaining_slot(
 
     assert sorted(response.status_code for response in responses) == [200, 409]
     conflict = next(response for response in responses if response.status_code == 409)
-    assert conflict.json()["detail"]["code"] == "followup_limit_reached"
+    assert conflict.json()["detail"]["code"] == "followup_source_changed"
     assert len(messaging.calls) == 1
+    assert client.get(
+        f"/outreach/proposals/{pending_b['id']}"
+    ).json()["status"] == "PENDING_APPROVAL"
+    assert client.get(
+        f"/outreach/proposals/{pending_c['id']}"
+    ).json()["status"] == "SENT"
     interaction = client.get(
         f"/outreach/proposals/{initial['id']}/interaction"
     ).json()

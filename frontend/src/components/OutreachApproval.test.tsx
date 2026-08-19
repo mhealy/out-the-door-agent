@@ -65,6 +65,126 @@ const sentProposal: OutreachProposal = {
   },
 };
 
+const inboundMessage = {
+  id: "interaction-1-message-1",
+  dealer_id: "baytown",
+  vehicle_id: "baytown-blue",
+  direction: "INBOUND",
+  subject: "No-add-on itemized quote",
+  body: [
+    "For VIN KM8JCDD10SU000001, the selling price is $37,950.",
+    "We have no dealer-installed products or add-ons.",
+    "The required documentation fee is $225, and tax, title, and license total $2,140.",
+    "Your written cash OTD is $40,315.",
+    "No dealer financing or trade-in is required.",
+  ].join("\n"),
+  received_at: "2026-08-19T14:40:00Z",
+  source_provider: "fixture",
+};
+
+function dealerEvidence(id: string, fieldName: string, excerpt: string) {
+  return {
+    id,
+    source_type: "DEALER_EMAIL",
+    source_id: inboundMessage.id,
+    field_name: fieldName,
+    excerpt,
+    created_at: inboundMessage.received_at,
+  };
+}
+
+const connectedInteraction = {
+  id: "interaction-1",
+  initial_action_id: sentProposal.id,
+  dealer_id: sentProposal.dealer_id,
+  vehicle_id: sentProposal.vehicle_id,
+  vehicle: sentProposal.vehicle,
+  created_at: "2026-08-19T20:00:01Z",
+  analysis_status: "ANALYZED",
+  analysis_error_code: null,
+  messages: [inboundMessage],
+  analysis: {
+    message: inboundMessage,
+    extraction: {
+      vehicle_vin: "KM8JCDD10SU000001",
+      stock_number: null,
+      selling_price: "37950",
+      claimed_otd: "40315",
+      dealer_fees: [{
+        name: "Documentation fee",
+        amount: "225",
+        stated_mandatory: true,
+        evidence_id: "ev-doc-fee",
+      }],
+      government_fees: [{
+        name: "Tax, title, and license",
+        amount: "2140",
+        stated_mandatory: true,
+        evidence_id: "ev-government-fees",
+      }],
+      addons: [],
+      incentives: [],
+      financing_required: false,
+      trade_required: false,
+      expiration: null,
+      explicit_no_addons_statement: true,
+      explicit_all_fees_included_statement: false,
+      unresolved_questions: [],
+      evidence_ids: [
+        "ev-vin",
+        "ev-selling-price",
+        "ev-claimed-otd",
+        "ev-doc-fee",
+        "ev-government-fees",
+        "ev-no-addons",
+        "ev-financing",
+        "ev-trade",
+      ],
+      extraction_confidence: 0.99,
+    },
+    evidence: [
+      dealerEvidence(
+        "ev-vin",
+        "vehicle_vin",
+        "For VIN KM8JCDD10SU000001, the selling price is $37,950.",
+      ),
+      dealerEvidence(
+        "ev-selling-price",
+        "selling_price",
+        "For VIN KM8JCDD10SU000001, the selling price is $37,950.",
+      ),
+      dealerEvidence("ev-claimed-otd", "claimed_otd", "Your written cash OTD is $40,315."),
+      dealerEvidence("ev-doc-fee", "dealer_fees", "The required documentation fee is $225"),
+      dealerEvidence("ev-government-fees", "government_fees", "tax, title, and license total $2,140"),
+      dealerEvidence("ev-no-addons", "explicit_no_addons_statement", "We have no dealer-installed products or add-ons."),
+      dealerEvidence("ev-financing", "financing_required", "No dealer financing or trade-in is required."),
+      dealerEvidence("ev-trade", "trade_required", "No dealer financing or trade-in is required."),
+    ],
+    assessment: {
+      comparable: true,
+      transparent: true,
+      reconciled: true,
+      missing_for_comparison: [],
+      missing_for_transparency: [],
+      reconciliation_difference: "0",
+    },
+  },
+};
+
+const failedInteraction = {
+  ...connectedInteraction,
+  analysis_status: "ANALYSIS_FAILED",
+  analysis_error_code: "invalid_quote_evidence",
+  analysis: null,
+};
+
+const inProgressInteraction = {
+  ...connectedInteraction,
+  analysis_status: "ANALYSIS_IN_PROGRESS",
+  analysis_error_code: null,
+  analysis: null,
+};
+
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -196,6 +316,192 @@ describe("OutreachApproval", () => {
       3,
       "http://api.test/outreach/proposals/proposal-1",
     );
+  });
+
+  it("releases a confirmed SENT response and shows one connected evidence-backed lifecycle", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(jsonResponse(pendingProposal, 201))
+      .mockResolvedValueOnce(jsonResponse(sentProposal))
+      .mockResolvedValueOnce(jsonResponse(connectedInteraction));
+
+    render(<OutreachApproval apiBaseUrl="http://api.test" candidate={candidate} />);
+    fireEvent.click(screen.getByRole("button", { name: "Prepare quote request" }));
+    const dialog = await screen.findByRole("dialog", { name: "Review dealer quote request" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Approve & send" }));
+
+    expect(await within(dialog).findByText("Sent through the fixture provider")).toBeVisible();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Release dealer response" }));
+
+    expect(await within(dialog).findByText("Dealer response received")).toBeVisible();
+    expect(within(dialog).getByText("Dealer response analyzed")).toBeVisible();
+    expect(within(dialog).getByText((_, element) => (
+      element?.tagName === "PRE" && element.textContent === inboundMessage.body
+    ))).toBeVisible();
+    expect(within(dialog).getByRole("heading", { name: "Is this quote usable?" })).toBeVisible();
+    expect(within(dialog).getByText("No comparison-policy gaps.")).toBeVisible();
+    expect(within(dialog).getByText("No transparency-policy gaps.")).toBeVisible();
+    expect(within(dialog).getByText("No source-grounded uncertainty extracted.")).toBeVisible();
+
+    const claimedOtdFact = within(dialog).getByText("Claimed out-the-door").closest(".fact");
+    expect(claimedOtdFact).not.toBeNull();
+    fireEvent.click(within(claimedOtdFact as HTMLElement).getByRole("button", { name: "View evidence" }));
+    const evidenceDrawer = await screen.findByRole("dialog", { name: "claimed otd" });
+    expect(within(evidenceDrawer).getByText("Your written cash OTD is $40,315.")).toBeVisible();
+    fireEvent.keyDown(evidenceDrawer, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "claimed otd" }))
+      .not.toBeInTheDocument());
+    expect(dialog).toBeVisible();
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
+      "http://api.test/outreach/proposals/proposal-1/demo-response",
+      expect.objectContaining({ method: "POST" }),
+    );
+  });
+
+  it.each([
+    ["PENDING_APPROVAL", pendingProposal],
+    ["REJECTED", { ...pendingProposal, status: "REJECTED" }],
+    ["APPROVED without confirmed delivery", { ...sentProposal, status: "APPROVED", delivery: null }],
+    ["SEND_FAILED", { ...sentProposal, status: "SEND_FAILED", delivery: null }],
+  ])("does not expose response release for %s", async (_, proposal) => {
+    const fetchMock = vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(jsonResponse(proposal, 201));
+
+    render(<OutreachApproval apiBaseUrl="http://api.test" candidate={candidate} />);
+    fireEvent.click(screen.getByRole("button", { name: "Prepare quote request" }));
+    const dialog = await screen.findByRole("dialog", { name: "Review dealer quote request" });
+
+    expect(within(dialog).queryByRole("button", { name: "Release dealer response" })).not.toBeInTheDocument();
+    expect(within(dialog).queryByText("Dealer response received")).not.toBeInTheDocument();
+    expect(within(dialog).queryByText("Dealer response analyzed")).not.toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("reconciles a lost release response to the idempotent persisted result", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(jsonResponse(pendingProposal, 201))
+      .mockResolvedValueOnce(jsonResponse(sentProposal))
+      .mockRejectedValueOnce(new TypeError("connection closed after release"))
+      .mockResolvedValueOnce(jsonResponse(connectedInteraction));
+
+    render(<OutreachApproval apiBaseUrl="http://api.test" candidate={candidate} />);
+    fireEvent.click(screen.getByRole("button", { name: "Prepare quote request" }));
+    const dialog = await screen.findByRole("dialog", { name: "Review dealer quote request" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Approve & send" }));
+    const release = await within(dialog).findByRole("button", { name: "Release dealer response" });
+    fireEvent.click(release);
+
+    expect(await within(dialog).findByText("Dealer response analyzed")).toBeVisible();
+    expect(within(dialog).queryByRole("alert")).not.toBeInTheDocument();
+    expect(within(dialog).getAllByText("Original dealer response")).toHaveLength(1);
+    expect(within(dialog).getAllByText((_, element) => (
+      element?.tagName === "PRE" && element.textContent === inboundMessage.body
+    ))).toHaveLength(1);
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      4,
+      "http://api.test/outreach/proposals/proposal-1/interaction",
+    );
+  });
+
+  it("shows the persisted raw response and a retry after analysis failure", async () => {
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(jsonResponse(pendingProposal, 201))
+      .mockResolvedValueOnce(jsonResponse(sentProposal))
+      .mockResolvedValueOnce(jsonResponse({
+        detail: {
+          code: "invalid_quote_evidence",
+          message: "The extracted quote evidence could not be validated.",
+        },
+      }, 502))
+      .mockResolvedValueOnce(jsonResponse(failedInteraction));
+
+    render(<OutreachApproval apiBaseUrl="http://api.test" candidate={candidate} />);
+    fireEvent.click(screen.getByRole("button", { name: "Prepare quote request" }));
+    const dialog = await screen.findByRole("dialog", { name: "Review dealer quote request" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Approve & send" }));
+    fireEvent.click(await within(dialog).findByRole("button", { name: "Release dealer response" }));
+
+    expect(await within(dialog).findByText("Dealer response received")).toBeVisible();
+    expect(within(dialog).getByText("Dealer response analysis failed")).toBeVisible();
+    expect(within(dialog).getByRole("alert")).toHaveTextContent(
+      "The extracted quote evidence could not be validated.",
+    );
+    expect(within(dialog).getByText((_, element) => (
+      element?.tagName === "PRE" && element.textContent === inboundMessage.body
+    ))).toBeVisible();
+    expect(within(dialog).getByRole("button", { name: "Retry response analysis" })).toBeVisible();
+  });
+
+  it("shows a competing analysis claim without offering another analysis attempt", async () => {
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(jsonResponse(pendingProposal, 201))
+      .mockResolvedValueOnce(jsonResponse(sentProposal))
+      .mockResolvedValueOnce(jsonResponse({
+        detail: {
+          code: "outreach_response_analysis_in_progress",
+          message: "This dealer response is already being analyzed.",
+        },
+      }, 409))
+      .mockResolvedValueOnce(jsonResponse(inProgressInteraction));
+
+    render(<OutreachApproval apiBaseUrl="http://api.test" candidate={candidate} />);
+    fireEvent.click(screen.getByRole("button", { name: "Prepare quote request" }));
+    const dialog = await screen.findByRole("dialog", { name: "Review dealer quote request" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Approve & send" }));
+    fireEvent.click(await within(dialog).findByRole("button", { name: "Release dealer response" }));
+
+    expect(await within(dialog).findByText("Dealer response analysis in progress")).toBeVisible();
+    expect(within(dialog).getByRole("alert")).toHaveTextContent(
+      "This dealer response is already being analyzed.",
+    );
+    expect(within(dialog).queryByRole("button", { name: "Resume response analysis" }))
+      .not.toBeInTheDocument();
+  });
+
+  it("reopens a completed interaction without preparing duplicate outreach", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(jsonResponse(pendingProposal, 201))
+      .mockResolvedValueOnce(jsonResponse(sentProposal))
+      .mockResolvedValueOnce(jsonResponse(connectedInteraction));
+
+    render(<OutreachApproval apiBaseUrl="http://api.test" candidate={candidate} />);
+    fireEvent.click(screen.getByRole("button", { name: "Prepare quote request" }));
+    const dialog = await screen.findByRole("dialog", { name: "Review dealer quote request" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Approve & send" }));
+    fireEvent.click(await within(dialog).findByRole("button", { name: "Release dealer response" }));
+    expect(await within(dialog).findByText("Dealer response analyzed")).toBeVisible();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Close" }));
+
+    const reopen = await screen.findByRole("button", { name: "View dealer interaction" });
+    fireEvent.click(reopen);
+    const reopened = await screen.findByRole("dialog", { name: "Review dealer quote request" });
+    expect(within(reopened).getByText("Dealer response analyzed")).toBeVisible();
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("shows a response-release failure without claiming receipt or analysis", async () => {
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(jsonResponse(pendingProposal, 201))
+      .mockResolvedValueOnce(jsonResponse(sentProposal))
+      .mockResolvedValueOnce(jsonResponse({
+        detail: {
+          code: "demo_response_fixture_not_found",
+          message: "No deterministic dealer response fixture is configured for this interaction.",
+        },
+      }, 422));
+
+    render(<OutreachApproval apiBaseUrl="http://api.test" candidate={candidate} />);
+    fireEvent.click(screen.getByRole("button", { name: "Prepare quote request" }));
+    const dialog = await screen.findByRole("dialog", { name: "Review dealer quote request" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Approve & send" }));
+    fireEvent.click(await within(dialog).findByRole("button", { name: "Release dealer response" }));
+
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent(
+      "No deterministic dealer response fixture is configured for this interaction.",
+    );
+    expect(within(dialog).queryByText("Dealer response received")).not.toBeInTheDocument();
+    expect(within(dialog).queryByText("Dealer response analyzed")).not.toBeInTheDocument();
   });
 
   it("keeps focus inside the modal and hides the background from assistive technology", async () => {

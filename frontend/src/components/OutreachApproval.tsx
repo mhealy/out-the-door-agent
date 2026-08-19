@@ -1,6 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
+import {
+  QuoteAnalysisResultView,
+  RawDealerMessage,
+  type DealerMessage,
+  type QuoteAnalysisResponse,
+} from "./QuoteAnalysisWorkspace";
+
 export type OutreachCandidate = {
   id: string;
   vin: string | null;
@@ -53,6 +60,24 @@ export type OutreachProposal = {
   delivery: DeliveryReceipt | null;
 };
 
+type OutreachInteraction = {
+  id: string;
+  initial_action_id: string;
+  dealer_id: string;
+  vehicle_id: string;
+  vehicle: OutreachCandidate;
+  created_at: string;
+  analysis_status:
+    | "AWAITING_RESPONSE"
+    | "RESPONSE_RECEIVED"
+    | "ANALYSIS_IN_PROGRESS"
+    | "ANALYZED"
+    | "ANALYSIS_FAILED";
+  analysis_error_code: string | null;
+  messages: DealerMessage[];
+  analysis: QuoteAnalysisResponse | null;
+};
+
 type ApiErrorPayload = {
   detail?: string | { message?: string };
 };
@@ -95,6 +120,32 @@ async function inspectProposal(apiBaseUrl: string, actionId: string): Promise<Ou
     throw new Error(await errorMessage(response, "The quote request status could not be loaded."));
   }
   return response.json() as Promise<OutreachProposal>;
+}
+
+async function releaseDemoResponse(
+  apiBaseUrl: string,
+  actionId: string,
+): Promise<OutreachInteraction> {
+  const response = await fetch(`${apiBaseUrl}/outreach/proposals/${actionId}/demo-response`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: "{}",
+  });
+  if (!response.ok) {
+    throw new Error(await errorMessage(response, "The dealer response could not be released."));
+  }
+  return response.json() as Promise<OutreachInteraction>;
+}
+
+async function inspectInteraction(
+  apiBaseUrl: string,
+  actionId: string,
+): Promise<OutreachInteraction> {
+  const response = await fetch(`${apiBaseUrl}/outreach/proposals/${actionId}/interaction`);
+  if (!response.ok) {
+    throw new Error(await errorMessage(response, "The dealer interaction status could not be loaded."));
+  }
+  return response.json() as Promise<OutreachInteraction>;
 }
 
 async function decideProposal(
@@ -202,15 +253,21 @@ function ProposalStatus({ proposal, error }: { proposal: OutreachProposal; error
 function ProposalDialog({
   proposal,
   decisionInFlight,
+  interaction,
+  releaseInFlight,
   error,
   onApprove,
+  onRelease,
   onReject,
   onClose,
 }: {
   proposal: OutreachProposal;
   decisionInFlight: "approve" | "reject" | null;
+  interaction: OutreachInteraction | null;
+  releaseInFlight: boolean;
   error: string | null;
   onApprove: () => void;
+  onRelease: () => void;
   onReject: () => void;
   onClose: () => void;
 }) {
@@ -218,6 +275,9 @@ function ProposalDialog({
   const dialogRef = useRef<HTMLElement>(null);
   const identifiers = vehicleIdentifiers(proposal.vehicle);
   const isDeciding = decisionInFlight !== null;
+  const isBusy = isDeciding || releaseInFlight;
+  const latestMessage = interaction?.messages.at(-1) ?? null;
+  const messageCount = interaction?.messages.length ?? 0;
 
   useEffect(() => {
     const previouslyFocused = document.activeElement instanceof HTMLElement
@@ -244,10 +304,10 @@ function ProposalDialog({
     <section
       aria-labelledby="outreach-review-heading"
       aria-modal="true"
-      className="outreach-dialog"
+      className={`outreach-dialog${latestMessage ? " outreach-dialog-expanded" : ""}`}
       ref={dialogRef}
       onKeyDown={(event) => {
-        if (event.key === "Escape" && !isDeciding) onClose();
+        if (event.key === "Escape" && !isBusy) onClose();
         if (event.key !== "Tab") return;
         const focusable = Array.from(dialogRef.current?.querySelectorAll<HTMLElement>(
           'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
@@ -275,7 +335,7 @@ function ProposalDialog({
         </div>
         <button
           className="secondary-button"
-          disabled={isDeciding}
+          disabled={isBusy}
           onClick={onClose}
           ref={closeButtonRef}
           type="button"
@@ -319,6 +379,72 @@ function ProposalDialog({
       <ProposalStatus error={error} proposal={proposal} />
       {error && proposal.status !== "SEND_FAILED" && <p className="error" role="alert">{error}</p>}
 
+      {proposal.status === "SENT" && proposal.delivery && <section
+        aria-labelledby="dealer-interaction-heading"
+        className="outreach-interaction"
+      >
+        <div className="panel-heading">
+          <div>
+            <p className="eyebrow">Dealer interaction</p>
+            <h3 id="dealer-interaction-heading">Continue the fixture conversation</h3>
+          </div>
+          <code>{interaction?.id ?? proposal.id}</code>
+        </div>
+
+        {!latestMessage && <>
+          <p className="item-detail">
+            Delivery is confirmed. Release the application-owned fixture response when you are ready to continue this interaction.
+          </p>
+          <button disabled={releaseInFlight} onClick={onRelease} type="button">
+            {releaseInFlight ? "Releasing…" : "Release dealer response"}
+          </button>
+        </>}
+
+        {latestMessage && <>
+          <ol className="interaction-lifecycle" aria-label="Dealer response lifecycle">
+            <li><strong>Quote request sent</strong><span>Fixture delivery confirmed</span></li>
+            <li>
+              <strong>Dealer response received</strong>
+              <span>{messageCount} inbound message{messageCount === 1 ? "" : "s"}</span>
+            </li>
+            {interaction?.analysis_status === "ANALYZED" && <li>
+              <strong>Dealer response analyzed</strong>
+              <span>Evidence validated and policy assessed</span>
+            </li>}
+            {interaction?.analysis_status === "ANALYSIS_FAILED" && <li>
+              <strong>Dealer response analysis failed</strong>
+              <span>The raw response is preserved for a safe retry</span>
+            </li>}
+            {interaction?.analysis_status === "RESPONSE_RECEIVED" && <li>
+              <strong>Dealer response awaiting analysis</strong>
+              <span>The raw response is preserved</span>
+            </li>}
+            {interaction?.analysis_status === "ANALYSIS_IN_PROGRESS" && <li>
+              <strong>Dealer response analysis in progress</strong>
+              <span>Another request holds the analysis claim</span>
+            </li>}
+          </ol>
+          {interaction?.analysis
+            ? <QuoteAnalysisResultView analysis={interaction.analysis} />
+            : <>
+              <div className="analysis-grid">
+                <RawDealerMessage message={latestMessage} />
+              </div>
+              {interaction?.analysis_status !== "ANALYSIS_IN_PROGRESS" && <button
+                disabled={releaseInFlight}
+                onClick={onRelease}
+                type="button"
+              >
+                {releaseInFlight
+                  ? "Analyzing…"
+                  : interaction?.analysis_status === "ANALYSIS_FAILED"
+                    ? "Retry response analysis"
+                    : "Resume response analysis"}
+              </button>}
+            </>}
+        </>}
+      </section>}
+
       {proposal.status === "PENDING_APPROVAL" && <div className="outreach-actions">
         <button
           className="secondary-button outreach-reject-button"
@@ -346,13 +472,18 @@ export function OutreachApproval({
   const [proposal, setProposal] = useState<OutreachProposal | null>(null);
   const [isPreparing, setIsPreparing] = useState(false);
   const [decisionInFlight, setDecisionInFlight] = useState<"approve" | "reject" | null>(null);
+  const [releaseInFlight, setReleaseInFlight] = useState(false);
+  const [interaction, setInteraction] = useState<OutreachInteraction | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [dialogOpen, setDialogOpen] = useState(false);
 
   const prepare = async () => {
     setIsPreparing(true);
     setError(null);
+    setInteraction(null);
     try {
       setProposal(await prepareProposal(apiBaseUrl, candidate.id));
+      setDialogOpen(true);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "The quote request could not be prepared.");
     } finally {
@@ -375,23 +506,61 @@ export function OutreachApproval({
     }
   };
 
-  const close = () => {
-    setProposal(null);
+  const release = async () => {
+    if (!proposal || proposal.status !== "SENT" || !proposal.delivery) return;
+    setReleaseInFlight(true);
     setError(null);
+    try {
+      setInteraction(await releaseDemoResponse(apiBaseUrl, proposal.id));
+    } catch (caught) {
+      const releaseError = caught instanceof Error
+        ? caught.message
+        : "The dealer response could not be released.";
+      try {
+        const persistedInteraction = await inspectInteraction(apiBaseUrl, proposal.id);
+        setInteraction(persistedInteraction);
+        setError(persistedInteraction.analysis_status === "ANALYZED" ? null : releaseError);
+      } catch {
+        setError(releaseError);
+      }
+    } finally {
+      setReleaseInFlight(false);
+    }
+  };
+
+  const close = () => {
+    setDialogOpen(false);
+  };
+
+  const openOrPrepare = () => {
+    if (proposal) {
+      setDialogOpen(true);
+      return;
+    }
+    void prepare();
   };
 
   return <>
-    <button disabled={isPreparing} onClick={prepare} type="button">
-      {isPreparing ? "Preparing…" : "Prepare quote request"}
+    <button disabled={isPreparing} onClick={openOrPrepare} type="button">
+      {isPreparing
+        ? "Preparing…"
+        : proposal?.status === "SENT"
+          ? "View dealer interaction"
+          : proposal
+            ? "View quote request"
+            : "Prepare quote request"}
     </button>
     {error && !proposal && <p className="error" role="alert">{error}</p>}
-    {proposal && <ProposalDialog
+    {proposal && dialogOpen && <ProposalDialog
       decisionInFlight={decisionInFlight}
       error={error}
+      interaction={interaction}
       onApprove={() => decide("approve")}
       onClose={close}
       onReject={() => decide("reject")}
+      onRelease={release}
       proposal={proposal}
+      releaseInFlight={releaseInFlight}
     />}
   </>;
 }

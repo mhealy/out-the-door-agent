@@ -1,6 +1,6 @@
 # OutTheDoor
 
-OutTheDoor is an agentic AI buyer advocate for vehicle purchasing. It is designed to acquire and interpret written dealer offers, preserve evidence for material financial claims, and compare true out-the-door economics while keeping outbound dealer communication under explicit human control. The current vertical slices provide deterministic fixture inventory search and bounded model-backed analysis of fixture dealer responses, including structured pricing terms, conditions, unresolved questions, and source-traceable evidence.
+OutTheDoor is an agentic AI buyer advocate for vehicle purchasing. It is designed to acquire and interpret written dealer offers, preserve evidence for material financial claims, and compare true out-the-door economics while keeping outbound dealer communication under explicit human control. The current vertical slices provide deterministic fixture inventory search and bounded model-backed analysis of fixture dealer responses, followed by deterministic vehicle-identity, quote-completeness, transparency, and arithmetic assessment.
 
 > Screenshot/GIF placeholder — the buyer workspace now includes inventory search and the dealer-response analysis lab; a polished demo capture remains follow-up documentation work.
 
@@ -17,7 +17,7 @@ React + TypeScript buyer workspace
               ▼
      SQLAlchemy 2 + SQLite
 
-LangGraph orchestration is intentionally deferred to a later issue. Quote extraction is a task-scoped provider call with no tools; deterministic services validate every evidence reference and source excerpt before returning it to the UI.
+LangGraph orchestration is intentionally deferred to a later issue. Quote extraction is a task-scoped provider call with no tools; deterministic services validate every evidence reference and source excerpt before applying comparison requirements and Decimal-based arithmetic. A quote can therefore be comparable without being transparent, and reconciliation remains unknown whenever line-item arithmetic is incomplete or ambiguous.
 ```
 
 The backend keeps domain contracts, deterministic services, external providers, API routes, orchestration, and persistence in separate packages. The implemented vertical slices stay within those boundaries while later orchestration and purchasing capabilities remain deferred.
@@ -133,21 +133,21 @@ This post-correction reference command passed all strict assertions. The initial
 
 ## Demo mode
 
-Start both applications and open `http://localhost:5173`. The top workspace searches the canonical Houston-area fixture inventory. In **Dealer response lab**, choose one of 15 raw response fixtures and select **Analyze response**. With a configured model key, the original message appears beside its typed quote extraction; evidence actions reveal exact supporting excerpts. Incomplete responses retain missing fields, conditional incentives remain conditional, and hostile instructions embedded in dealer text remain inert.
+Start both applications and open `http://localhost:5173`. The top workspace searches the canonical Houston-area fixture inventory. In **Dealer response lab**, choose one of 15 raw response fixtures and select **Analyze response**. With a configured model key, the original message appears beside its typed quote extraction and deterministic assessment; evidence actions reveal exact supporting excerpts. The assessment shows comparable, transparent, and reconciled states independently, separates source-stated uncertainty from application-policy gaps, and explains reconciliation as known line items minus claimed OTD.
 
 ## Design principles
 
 - Evidence supports economically important claims.
 - Deterministic code owns arithmetic, constraints, policy, ranking, authorization, and state transitions.
 - LLMs are reserved for bounded semantic interpretation.
-- Quote extraction records what the dealer stated, including explicitly sourced uncertainty; deterministic completeness and follow-up policy belong to later issues.
+- Quote extraction records what the dealer stated, including explicitly sourced uncertainty; deterministic assessment separately owns identity, completeness, transparency, missing requirements, and arithmetic.
 - Human approval is required before outbound dealer communication.
 - Fixture providers will exercise the same application paths as live providers.
 - SQLite and a single application deployment are intentional for this assessment.
 
 ## Known limitations
 
-Criteria interpretation remains a fixture implementation limited to the canonical Hyundai Tucson Hybrid vocabulary. Quote analysis requires an OpenAI API key and has not yet added persistence for extracted quote records. There is no live inventory, outbound dealer messaging, approval flow, quote completeness/reconciliation policy, comparison or ranking, LangGraph orchestration, or event streaming. Those capabilities remain intentionally deferred to later issues.
+Criteria interpretation remains a fixture implementation limited to the canonical Hyundai Tucson Hybrid vocabulary. Quote analysis requires an OpenAI API key and has not yet added persistence for extracted quote records. There is no live inventory, outbound dealer messaging, approval flow, follow-up drafting, multi-dealer comparison or ranking, LangGraph orchestration, or event streaming. Those capabilities remain intentionally deferred to later issues.
 
 ## Productionization
 

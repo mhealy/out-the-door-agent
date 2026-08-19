@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.health import router as health_router
 from app.api.candidates import router as candidates_router
+from app.api.quotes import router as quotes_router
 from app.config import get_settings
 from app.persistence.db import create_schema
 
@@ -28,6 +29,7 @@ def create_app() -> FastAPI:
     )
     application.include_router(health_router)
     application.include_router(candidates_router)
+    application.include_router(quotes_router)
     return application
 
 

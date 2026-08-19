@@ -49,15 +49,25 @@ def shortlist_candidates(
     listings: list[VehicleListing],
     limit: int = 5,
 ) -> list[VehicleListing]:
-    trims = _normalized(criteria.trims)
-    colors = _normalized(criteria.preferred_exterior_colors)
+    exterior_colors = _normalized(criteria.preferred_exterior_colors)
+    interior_colors = _normalized(criteria.preferred_interior_colors)
 
-    def key(item: VehicleListing) -> tuple[bool, bool, Decimal, float, str]:
+    def key(item: VehicleListing) -> tuple[int, Decimal, float, str]:
+        preference_misses = int(
+            bool(exterior_colors)
+            and not any(
+                color in (item.exterior_color or "").casefold()
+                for color in exterior_colors
+            )
+        ) + int(
+            bool(interior_colors)
+            and not any(
+                color in (item.interior_color or "").casefold()
+                for color in interior_colors
+            )
+        )
         return (
-            bool(trims) and (item.trim or "").casefold() not in trims,
-            bool(colors) and not any(
-                color in (item.exterior_color or "").casefold() for color in colors
-            ),
+            preference_misses,
             item.advertised_price if item.advertised_price is not None else Decimal("Infinity"),
             item.distance_miles if item.distance_miles is not None else float("inf"),
             item.id,

@@ -103,10 +103,10 @@ Run the frontend production check from `frontend/`:
 npm run build
 ```
 
-Run the current criteria-interpretation fixture evaluations with:
+Run the deterministic fixture-interpreter and application tests with:
 
 ```powershell
-pytest tests/evals
+pytest
 ```
 
 ## Demo mode

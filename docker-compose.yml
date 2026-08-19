@@ -1,16 +1,25 @@
 services:
   backend:
-    build: ./backend
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
     environment:
+      OTD_APP_NAME: ${OTD_APP_NAME:-OutTheDoor API}
+      OTD_ENVIRONMENT: ${OTD_ENVIRONMENT:-development}
       OTD_DATABASE_URL: sqlite:////data/out_the_door.db
-      OTD_CORS_ORIGINS: '["http://localhost:5173"]'
+      OTD_CORS_ORIGINS: '${OTD_CORS_ORIGINS:-["http://localhost:5173"]}'
+      OTD_QUOTE_EXTRACTION_MODEL: ${OTD_QUOTE_EXTRACTION_MODEL:-gpt-5.6}
+      OTD_OPENAI_API_KEY: ${OTD_OPENAI_API_KEY:-}
     ports:
       - "8000:8000"
     volumes:
       - backend-data:/data
 
   frontend:
-    build: ./frontend
+    build:
+      context: ./frontend
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8000}
     depends_on:
       - backend
     ports:

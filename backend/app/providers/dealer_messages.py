@@ -1,6 +1,6 @@
 import json
 from pathlib import Path
-from typing import Protocol
+from typing import Final, Protocol
 
 from pydantic import BaseModel, ConfigDict
 
@@ -27,6 +27,10 @@ class DealerMessageProvider(Protocol):
 
 class DealerMessageNotFoundError(LookupError):
     """The requested normalized dealer message does not exist."""
+
+
+class DemoResponseFixtureNotFoundError(LookupError):
+    """No application-owned response fixture is mapped to the interaction."""
 
 
 class _FixtureMessageRecord(BaseModel):
@@ -74,3 +78,44 @@ class FixtureDealerMessageProvider:
             if message.id == message_id:
                 return message
         raise DealerMessageNotFoundError(message_id)
+
+
+DEMO_RESPONSE_FIXTURE_IDS: Final[dict[tuple[str, str], str]] = {
+    ("baytown", "baytown-blue"): "msg-explicit-no-addons",
+    ("houston", "houston-white"): "msg-mandatory-addons",
+    ("katy", "katy-blue"): "msg-trade-assistance",
+}
+
+
+class DealerResponseProvider(Protocol):
+    async def get_response(
+        self,
+        *,
+        dealer_id: str,
+        vehicle_id: str,
+    ) -> DealerMessage: ...
+
+
+class FixtureDealerResponseProvider:
+    """Select canonical responses from an application-owned target mapping."""
+
+    def __init__(self, message_provider: DealerMessageProvider) -> None:
+        self._message_provider = message_provider
+
+    async def get_response(
+        self,
+        *,
+        dealer_id: str,
+        vehicle_id: str,
+    ) -> DealerMessage:
+        try:
+            fixture_id = DEMO_RESPONSE_FIXTURE_IDS[(dealer_id, vehicle_id)]
+        except KeyError as error:
+            raise DemoResponseFixtureNotFoundError(
+                f"{dealer_id}/{vehicle_id}"
+            ) from error
+
+        try:
+            return await self._message_provider.get_message(fixture_id)
+        except DealerMessageNotFoundError as error:
+            raise DemoResponseFixtureNotFoundError(fixture_id) from error

@@ -834,6 +834,46 @@ describe("OutreachApproval", () => {
     expect(preparationCalls).toHaveLength(preparationCallsBeforeRetry.length + 1);
   });
 
+  it("keeps a stale follow-up non-authorizable when proposal reconciliation fails", async () => {
+    const staleConflictMessage = "A newer dealer response was analyzed. Prepare a new follow-up.";
+    const fetchMock = vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(jsonResponse(pendingProposal, 201))
+      .mockResolvedValueOnce(jsonResponse(sentProposal))
+      .mockResolvedValueOnce(jsonResponse(incompleteInteraction))
+      .mockResolvedValueOnce(jsonResponse(pendingFollowupProposal, 201))
+      .mockResolvedValueOnce(jsonResponse({
+        detail: {
+          code: "followup_source_changed",
+          message: staleConflictMessage,
+        },
+      }, 409))
+      .mockResolvedValueOnce(jsonResponse({
+        detail: {
+          code: "outreach_proposal_unavailable",
+          message: "The persisted proposal could not be loaded.",
+        },
+      }, 503));
+
+    const dialog = await openAnalyzedInteraction();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Prepare follow-up" }));
+    const followupDialog = await screen.findByRole("dialog", { name: "Review dealer follow-up" });
+    fireEvent.click(within(followupDialog).getByRole("button", { name: "Approve & send" }));
+
+    expect(await within(followupDialog).findByRole("alert")).toHaveTextContent(staleConflictMessage);
+    expect(within(followupDialog).queryByText("Sent through the fixture provider"))
+      .not.toBeInTheDocument();
+    expect(within(followupDialog).queryByText("fixture-followup-1")).not.toBeInTheDocument();
+    expect(within(followupDialog).queryByText("Follow-up 1 sent")).not.toBeInTheDocument();
+    await waitFor(() => {
+      const approvalCalls = fetchMock.mock.calls.filter(([url]) => (
+        url === "http://api.test/outreach/proposals/followup-1/approve"
+      ));
+      expect(approvalCalls).toHaveLength(1);
+    });
+    expect(within(followupDialog).queryByRole("button", { name: "Approve & send" }))
+      .not.toBeInTheDocument();
+  });
+
   it.each([
     ["PENDING_APPROVAL", pendingProposal],
     ["REJECTED", { ...pendingProposal, status: "REJECTED" }],

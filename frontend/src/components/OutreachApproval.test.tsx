@@ -102,6 +102,10 @@ const connectedInteraction = {
   created_at: "2026-08-19T20:00:01Z",
   analysis_status: "ANALYZED",
   analysis_error_code: null,
+  followups: [],
+  sent_followup_count: 0,
+  followup_limit: 2,
+  followup_limit_reached: false,
   messages: [inboundMessage],
   analysis: {
     message: inboundMessage,
@@ -171,6 +175,137 @@ const connectedInteraction = {
   },
 };
 
+const incompleteInteraction = {
+  ...connectedInteraction,
+  analysis: {
+    ...connectedInteraction.analysis,
+    extraction: {
+      ...connectedInteraction.analysis.extraction,
+      claimed_otd: null,
+      financing_required: null,
+      explicit_no_addons_statement: false,
+    },
+    assessment: {
+      comparable: false,
+      transparent: false,
+      reconciled: null,
+      missing_for_comparison: [
+        "claimed_otd",
+        "addon_status",
+        "financing_dependency",
+      ],
+      missing_for_transparency: [
+        "dealer_fee_detail",
+        "government_fee_detail",
+      ],
+      reconciliation_difference: null,
+    },
+  },
+};
+
+const transparencyOnlyInteraction = {
+  ...connectedInteraction,
+  analysis: {
+    ...connectedInteraction.analysis,
+    assessment: {
+      ...connectedInteraction.analysis.assessment,
+      transparent: false,
+      missing_for_transparency: ["dealer_fee_detail"],
+    },
+  },
+};
+
+const pendingFollowupProposal = {
+  id: "followup-1",
+  action_type: "SEND_FOLLOWUP",
+  dealer_id: "baytown",
+  vehicle_id: "baytown-blue",
+  recipient: "quotes@baytown.example.test",
+  subject: "Clarification for the 2025 Hyundai Tucson Hybrid Limited quote",
+  body: [
+    "Thanks for the quote. To compare it accurately, could you please confirm:",
+    "",
+    "- the written out-the-door total",
+    "- whether dealer-installed products or add-ons are mandatory",
+    "- whether the quoted economics require dealer financing",
+    "",
+    "Thanks.",
+  ].join("\n"),
+  reason: "The latest response is missing information required to compare this quote.",
+  requested_information: [
+    "claimed_otd",
+    "addon_status",
+    "financing_dependency",
+  ],
+  requested_information_labels: [
+    "Written out-the-door total",
+    "Whether dealer add-ons are mandatory",
+    "Dealer-financing dependency",
+  ],
+  requires_approval: true,
+  status: "PENDING_APPROVAL",
+  vehicle: candidate,
+  approval: null,
+  delivery: null,
+} as unknown as OutreachProposal;
+
+const sentFollowupProposal = {
+  ...pendingFollowupProposal,
+  status: "SENT",
+  approval: {
+    decision: "APPROVED",
+    decided_at: "2026-08-19T21:00:00Z",
+    action_snapshot: {
+      vehicle_id: pendingFollowupProposal.vehicle_id,
+      dealer_id: pendingFollowupProposal.dealer_id,
+      recipient: pendingFollowupProposal.recipient,
+      subject: pendingFollowupProposal.subject,
+      body: pendingFollowupProposal.body,
+    },
+  },
+  delivery: {
+    action_id: pendingFollowupProposal.id,
+    provider: "fixture",
+    external_message_id: "fixture-followup-1",
+    sent_at: "2026-08-19T21:00:01Z",
+  },
+} as OutreachProposal;
+
+const rejectedFollowupProposal = {
+  ...pendingFollowupProposal,
+  id: "followup-rejected",
+  status: "REJECTED",
+  approval: {
+    decision: "REJECTED",
+    decided_at: "2026-08-19T20:50:00Z",
+    action_snapshot: {
+      vehicle_id: pendingFollowupProposal.vehicle_id,
+      dealer_id: pendingFollowupProposal.dealer_id,
+      recipient: pendingFollowupProposal.recipient,
+      subject: pendingFollowupProposal.subject,
+      body: pendingFollowupProposal.body,
+    },
+  },
+} as OutreachProposal;
+
+const failedFollowupProposal = {
+  ...sentFollowupProposal,
+  id: "followup-failed",
+  status: "SEND_FAILED",
+  delivery: null,
+} as OutreachProposal;
+
+function interactionWithFollowups(followups: OutreachProposal[]) {
+  const sentFollowupCount = followups.filter((followup) => followup.status === "SENT").length;
+  return {
+    ...incompleteInteraction,
+    followups,
+    sent_followup_count: sentFollowupCount,
+    followup_limit: 2,
+    followup_limit_reached: sentFollowupCount >= 2,
+  };
+}
+
 const failedInteraction = {
   ...connectedInteraction,
   analysis_status: "ANALYSIS_FAILED",
@@ -190,6 +325,16 @@ function jsonResponse(body: unknown, status = 200): Response {
     status,
     headers: { "Content-Type": "application/json" },
   });
+}
+
+async function openAnalyzedInteraction(): Promise<HTMLElement> {
+  render(<OutreachApproval apiBaseUrl="http://api.test" candidate={candidate} />);
+  fireEvent.click(screen.getByRole("button", { name: "Prepare quote request" }));
+  const dialog = await screen.findByRole("dialog", { name: "Review dealer quote request" });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Approve & send" }));
+  fireEvent.click(await within(dialog).findByRole("button", { name: "Release dealer response" }));
+  await within(dialog).findByText("Dealer response analyzed");
+  return dialog;
 }
 
 afterEach(() => {
@@ -357,6 +502,202 @@ describe("OutreachApproval", () => {
       "http://api.test/outreach/proposals/proposal-1/demo-response",
       expect.objectContaining({ method: "POST" }),
     );
+  });
+
+  it("shows deterministic comparison gaps and prepares a follow-up with an empty request body", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(jsonResponse(pendingProposal, 201))
+      .mockResolvedValueOnce(jsonResponse(sentProposal))
+      .mockResolvedValueOnce(jsonResponse(incompleteInteraction))
+      .mockResolvedValueOnce(jsonResponse(pendingFollowupProposal, 201));
+
+    const dialog = await openAnalyzedInteraction();
+    expect(within(dialog).getByText("Needs clarification")).toBeVisible();
+    const comparisonGaps = within(dialog)
+      .getByRole("heading", { name: "Missing for comparison" })
+      .closest("section");
+    expect(comparisonGaps).not.toBeNull();
+    expect(within(comparisonGaps as HTMLElement).getByText("Written out-the-door total")).toBeVisible();
+    expect(within(comparisonGaps as HTMLElement).getByText("Whether dealer add-ons are mandatory")).toBeVisible();
+    expect(within(comparisonGaps as HTMLElement).getByText("Dealer-financing dependency")).toBeVisible();
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "Prepare follow-up" }));
+
+    const followupDialog = await screen.findByRole("dialog", { name: "Review dealer follow-up" });
+    expect(within(followupDialog).getByText(pendingFollowupProposal.recipient)).toBeVisible();
+    expect(within(followupDialog).getByText("2025 Hyundai Tucson Hybrid Limited")).toBeVisible();
+    expect(within(followupDialog).getByText("VIN KM8JCDD10SU000001 · Stock B1001")).toBeVisible();
+    expect(within(followupDialog).getByText(pendingFollowupProposal.subject)).toBeVisible();
+    expect(within(followupDialog).getByText((_, element) => (
+      element?.tagName === "PRE" && element.textContent === pendingFollowupProposal.body
+    ))).toBeVisible();
+    expect(within(followupDialog).getByText((_, element) => (
+      element?.tagName === "PRE" && element.textContent === incompleteInteraction.messages[0].body
+    ))).toBeVisible();
+    const requestedInformation = within(followupDialog)
+      .getByRole("heading", { name: "Requested information" })
+      .closest("section");
+    expect(requestedInformation).not.toBeNull();
+    expect(within(requestedInformation as HTMLElement).getByText("Written out-the-door total"))
+      .toBeVisible();
+    expect(within(requestedInformation as HTMLElement).getByText("Whether dealer add-ons are mandatory"))
+      .toBeVisible();
+    expect(within(requestedInformation as HTMLElement).getByText("Dealer-financing dependency"))
+      .toBeVisible();
+    expect(within(requestedInformation as HTMLElement).queryByText("Dealer or documentation fee detail"))
+      .not.toBeInTheDocument();
+    expect(within(followupDialog).getByText("Sending requires your explicit approval.")).toBeVisible();
+    expect(within(followupDialog).queryByRole("button", { name: "Prepare follow-up" }))
+      .not.toBeInTheDocument();
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      4,
+      "http://api.test/outreach/proposals/proposal-1/followups",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+      },
+    );
+  });
+
+  it("approves the exact SEND_FOLLOWUP proposal and refreshes its original interaction history", async () => {
+    const interactionWithSentFollowup = interactionWithFollowups([sentFollowupProposal]);
+    const fetchMock = vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(jsonResponse(pendingProposal, 201))
+      .mockResolvedValueOnce(jsonResponse(sentProposal))
+      .mockResolvedValueOnce(jsonResponse(incompleteInteraction))
+      .mockResolvedValueOnce(jsonResponse(pendingFollowupProposal, 201))
+      .mockResolvedValueOnce(jsonResponse(sentFollowupProposal))
+      .mockResolvedValueOnce(jsonResponse(interactionWithSentFollowup));
+
+    const dialog = await openAnalyzedInteraction();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Prepare follow-up" }));
+    const followupDialog = await screen.findByRole("dialog", { name: "Review dealer follow-up" });
+    fireEvent.click(within(followupDialog).getByRole("button", { name: "Approve & send" }));
+
+    expect(await within(followupDialog).findByText("Sent through the fixture provider")).toBeVisible();
+    expect(within(followupDialog).getByText("fixture-followup-1")).toBeVisible();
+    expect(await within(followupDialog).findByText("Follow-up 1 sent")).toBeVisible();
+    expect(within(followupDialog).getByText("1 of 2 follow-ups sent")).toBeVisible();
+    expect(within(followupDialog).getByText("interaction-1")).toBeVisible();
+    expect(within(followupDialog).getAllByText(pendingFollowupProposal.subject).length).toBeGreaterThan(0);
+    expect(within(followupDialog).getAllByText((_, element) => (
+      element?.tagName === "PRE" && element.textContent === pendingFollowupProposal.body
+    )).length).toBeGreaterThan(0);
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      5,
+      "http://api.test/outreach/proposals/followup-1/approve",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+      },
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      6,
+      "http://api.test/outreach/proposals/proposal-1/interaction",
+    );
+  });
+
+  it.each([
+    ["an already-comparable quote", connectedInteraction],
+    ["transparency-only gaps", transparencyOnlyInteraction],
+  ])("does not offer a follow-up for %s", async (_, interaction) => {
+    const fetchMock = vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(jsonResponse(pendingProposal, 201))
+      .mockResolvedValueOnce(jsonResponse(sentProposal))
+      .mockResolvedValueOnce(jsonResponse(interaction));
+
+    const dialog = await openAnalyzedInteraction();
+
+    expect(within(dialog).queryByRole("button", { name: "Prepare follow-up" }))
+      .not.toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("does not count rejected or failed proposals toward the sent follow-up limit", async () => {
+    const interaction = interactionWithFollowups([
+      rejectedFollowupProposal,
+      failedFollowupProposal,
+    ]);
+    const fetchMock = vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(jsonResponse(pendingProposal, 201))
+      .mockResolvedValueOnce(jsonResponse(sentProposal))
+      .mockResolvedValueOnce(jsonResponse(interaction));
+
+    const dialog = await openAnalyzedInteraction();
+
+    expect(within(dialog).getByText("0 of 2 follow-ups sent")).toBeVisible();
+    expect(within(dialog).getByRole("button", { name: "Prepare follow-up" })).toBeEnabled();
+    expect(within(dialog).queryByText("Follow-up limit reached")).not.toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("visibly blocks a third proposal after two successfully sent follow-ups", async () => {
+    const secondSentFollowup = {
+      ...sentFollowupProposal,
+      id: "followup-2",
+      delivery: {
+        ...sentFollowupProposal.delivery,
+        action_id: "followup-2",
+        external_message_id: "fixture-followup-2",
+      },
+    } as OutreachProposal;
+    const interaction = interactionWithFollowups([
+      sentFollowupProposal,
+      secondSentFollowup,
+    ]);
+    const fetchMock = vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(jsonResponse(pendingProposal, 201))
+      .mockResolvedValueOnce(jsonResponse(sentProposal))
+      .mockResolvedValueOnce(jsonResponse(interaction));
+
+    const dialog = await openAnalyzedInteraction();
+
+    expect(within(dialog).getByText("Needs clarification")).toBeVisible();
+    expect(within(dialog).getByText("2 of 2 follow-ups sent")).toBeVisible();
+    expect(within(dialog).getByText("Follow-up limit reached")).toBeVisible();
+    expect(within(dialog).queryByRole("button", { name: "Prepare follow-up" }))
+      .not.toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("surfaces an unconfirmed follow-up send without automatically retrying it", async () => {
+    const failedPreparedFollowup = {
+      ...sentFollowupProposal,
+      status: "SEND_FAILED",
+      delivery: null,
+    } as OutreachProposal;
+    const interactionWithFailedFollowup = interactionWithFollowups([failedPreparedFollowup]);
+    const fetchMock = vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(jsonResponse(pendingProposal, 201))
+      .mockResolvedValueOnce(jsonResponse(sentProposal))
+      .mockResolvedValueOnce(jsonResponse(incompleteInteraction))
+      .mockResolvedValueOnce(jsonResponse(pendingFollowupProposal, 201))
+      .mockResolvedValueOnce(jsonResponse({
+        detail: {
+          code: "outreach_send_failed",
+          message: "The approved dealer follow-up could not be sent.",
+        },
+      }, 502))
+      .mockResolvedValueOnce(jsonResponse(failedPreparedFollowup))
+      .mockResolvedValueOnce(jsonResponse(interactionWithFailedFollowup));
+
+    const dialog = await openAnalyzedInteraction();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Prepare follow-up" }));
+    const followupDialog = await screen.findByRole("dialog", { name: "Review dealer follow-up" });
+    fireEvent.click(within(followupDialog).getByRole("button", { name: "Approve & send" }));
+
+    expect(await within(followupDialog).findByText("Delivery failed")).toBeVisible();
+    expect(within(followupDialog).getByText("The approved dealer follow-up could not be sent."))
+      .toBeVisible();
+    await waitFor(() => {
+      const approvalCalls = fetchMock.mock.calls.filter(([url]) => (
+        url === "http://api.test/outreach/proposals/followup-1/approve"
+      ));
+      expect(approvalCalls).toHaveLength(1);
+    });
+    expect(within(followupDialog).queryByText("fixture-followup-1")).not.toBeInTheDocument();
   });
 
   it.each([

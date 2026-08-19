@@ -169,3 +169,21 @@ For each meaningful feature or vertical slice:
    issue acceptance criteria, `AGENTS.md`, and `ENGINEERING_SPEC.md`.
 10. After approval, merge and begin the next issue from updated `main`.
 
+## Pull Request Requirements
+
+For meaningful feature work, create a pull request after the feature branch is complete
+and pushed.
+
+The pull request should include:
+
+- a concise summary of the implemented capability,
+- `Closes #<issue-number>` when appropriate,
+- key design decisions,
+- tests and verification performed,
+- known limitations or follow-up work,
+- any deviations from `ENGINEERING_SPEC.md`.
+
+Creating the pull request does not constitute approval.
+
+After creating the pull request, stop and wait for external review. Do not merge it.
+

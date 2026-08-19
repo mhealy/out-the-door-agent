@@ -16,7 +16,7 @@ main {
   box-sizing: border-box;
   max-width: 760px;
   min-height: 100vh;
-  padding: 18vh 2rem 4rem;
+  padding: 6rem 2rem;
   margin: 0 auto;
 }
 
@@ -40,11 +40,14 @@ h1 {
   line-height: 1.5;
 }
 
-.status {
-  display: inline-block;
-  padding: 0.75rem 1rem;
-  border: 1px solid #b9cabb;
-  border-radius: 999px;
-  color: #315b40;
-  background: #fff;
-}
+form, .criteria, article { padding: 1.25rem; border: 1px solid #b9cabb; border-radius: 1rem; background: #fff; }
+label { display: block; margin-bottom: 0.5rem; font-weight: 700; }
+textarea { box-sizing: border-box; width: 100%; min-height: 7rem; padding: 0.85rem; font: inherit; }
+button { margin-top: 0.75rem; padding: 0.75rem 1rem; border: 0; border-radius: 999px; color: white; background: #315b40; font-weight: 700; cursor: pointer; }
+button:disabled { opacity: 0.6; cursor: wait; }
+.results { margin-top: 2.5rem; }
+.candidate-grid { display: grid; gap: 1rem; }
+article h3 { margin: 0.25rem 0; }
+.price { margin: 0.5rem 0; font-size: 1.6rem; font-weight: 750; }
+.error { color: #9b2c2c; }
+@media (min-width: 720px) { .candidate-grid { grid-template-columns: repeat(2, 1fr); } }

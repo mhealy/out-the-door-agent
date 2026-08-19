@@ -88,7 +88,12 @@ type OutreachInteraction = {
 };
 
 type ApiErrorPayload = {
-  detail?: string | { message?: string };
+  detail?: string | { code?: string; message?: string };
+};
+
+type ApiError = {
+  code: string | null;
+  message: string;
 };
 
 const requirementLabels: Record<string, string> = {
@@ -104,11 +109,16 @@ const requirementLabels: Record<string, string> = {
   quote_expiration: "Quote expiration or validity period, if applicable",
 };
 
-async function errorMessage(response: Response, fallback: string): Promise<string> {
+async function readApiError(response: Response, fallback: string): Promise<ApiError> {
   const payload = (await response.json().catch(() => null)) as ApiErrorPayload | null;
   const detail = payload?.detail;
   const message = typeof detail === "string" ? detail : detail?.message;
-  return message ?? fallback;
+  const code = typeof detail === "string" ? null : detail?.code ?? null;
+  return { code, message: message ?? fallback };
+}
+
+async function errorMessage(response: Response, fallback: string): Promise<string> {
+  return (await readApiError(response, fallback)).message;
 }
 
 async function prepareProposal(apiBaseUrl: string, vehicleId: string): Promise<OutreachProposal> {
@@ -176,7 +186,11 @@ async function decideProposal(
   apiBaseUrl: string,
   actionId: string,
   decision: "approve" | "reject",
-): Promise<{ proposal: OutreachProposal | null; error: string | null }> {
+): Promise<{
+  proposal: OutreachProposal | null;
+  error: string | null;
+  errorCode: string | null;
+}> {
   const fallback = decision === "approve"
     ? "The approved dealer message could not be sent."
     : "The quote request could not be rejected.";
@@ -197,6 +211,7 @@ async function decideProposal(
       return {
         proposal: await response.json() as OutreachProposal,
         error: null,
+        errorCode: null,
       };
     } catch {
       return reconcileDecision(
@@ -208,8 +223,14 @@ async function decideProposal(
     }
   }
 
-  const message = await errorMessage(response, fallback);
-  return reconcileDecision(apiBaseUrl, actionId, decision, message);
+  const apiError = await readApiError(response, fallback);
+  return reconcileDecision(
+    apiBaseUrl,
+    actionId,
+    decision,
+    apiError.message,
+    apiError.code,
+  );
 }
 
 async function reconcileDecision(
@@ -217,7 +238,12 @@ async function reconcileDecision(
   actionId: string,
   decision: "approve" | "reject",
   message: string,
-): Promise<{ proposal: OutreachProposal; error: string | null }> {
+  errorCode: string | null = null,
+): Promise<{
+  proposal: OutreachProposal;
+  error: string | null;
+  errorCode: string | null;
+}> {
   try {
     const proposal = await inspectProposal(apiBaseUrl, actionId);
     const outcomeConfirmed = decision === "approve"
@@ -226,6 +252,7 @@ async function reconcileDecision(
     return {
       proposal,
       error: outcomeConfirmed ? null : message,
+      errorCode: outcomeConfirmed ? null : errorCode,
     };
   } catch {
     throw new Error(message);
@@ -359,6 +386,7 @@ function FollowupControls({
 function ProposalDialog({
   proposal,
   initialProposal,
+  approvalBlocked,
   decisionInFlight,
   interaction,
   prepareFollowupInFlight,
@@ -372,6 +400,7 @@ function ProposalDialog({
 }: {
   proposal: OutreachProposal;
   initialProposal: OutreachProposal;
+  approvalBlocked: boolean;
   decisionInFlight: "approve" | "reject" | null;
   interaction: OutreachInteraction | null;
   prepareFollowupInFlight: boolean;
@@ -391,6 +420,7 @@ function ProposalDialog({
   const latestMessage = interaction?.messages.at(-1) ?? null;
   const messageCount = interaction?.messages.length ?? 0;
   const isFollowup = proposal.action_type === "SEND_FOLLOWUP";
+  const followupApprovalBlocked = isFollowup && approvalBlocked;
 
   useEffect(() => {
     const previouslyFocused = document.activeElement instanceof HTMLElement
@@ -546,7 +576,11 @@ function ProposalDialog({
             ? <>
               <QuoteAnalysisResultView analysis={interaction.analysis} />
               <FollowupControls
-                awaitingApproval={isFollowup && proposal.status === "PENDING_APPROVAL"}
+                awaitingApproval={
+                  isFollowup
+                  && proposal.status === "PENDING_APPROVAL"
+                  && !followupApprovalBlocked
+                }
                 interaction={interaction}
                 onPrepare={onPrepareFollowup}
                 preparing={prepareFollowupInFlight}
@@ -583,9 +617,13 @@ function ProposalDialog({
             ? "Rejecting…"
             : isFollowup ? "Reject follow-up" : "Reject request"}
         </button>
-        <button disabled={isDeciding} onClick={onApprove} type="button">
+        {!followupApprovalBlocked && <button
+          disabled={isDeciding}
+          onClick={onApprove}
+          type="button"
+        >
           {decisionInFlight === "approve" ? "Sending…" : "Approve & send"}
-        </button>
+        </button>}
       </div>}
     </section>
   </div>, document.body);
@@ -600,6 +638,7 @@ export function OutreachApproval({
 }) {
   const [initialProposal, setInitialProposal] = useState<OutreachProposal | null>(null);
   const [reviewProposal, setReviewProposal] = useState<OutreachProposal | null>(null);
+  const [blockedApprovalActionId, setBlockedApprovalActionId] = useState<string | null>(null);
   const [isPreparing, setIsPreparing] = useState(false);
   const [prepareFollowupInFlight, setPrepareFollowupInFlight] = useState(false);
   const [decisionInFlight, setDecisionInFlight] = useState<"approve" | "reject" | null>(null);
@@ -616,6 +655,7 @@ export function OutreachApproval({
       const prepared = await prepareProposal(apiBaseUrl, candidate.id);
       setInitialProposal(prepared);
       setReviewProposal(prepared);
+      setBlockedApprovalActionId(null);
       setDialogOpen(true);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "The quote request could not be prepared.");
@@ -637,7 +677,9 @@ export function OutreachApproval({
     setPrepareFollowupInFlight(true);
     setError(null);
     try {
-      setReviewProposal(await prepareFollowup(apiBaseUrl, initialProposal.id));
+      const prepared = await prepareFollowup(apiBaseUrl, initialProposal.id);
+      setReviewProposal(prepared);
+      setBlockedApprovalActionId(null);
     } catch (caught) {
       setError(caught instanceof Error
         ? caught.message
@@ -654,6 +696,11 @@ export function OutreachApproval({
     setError(null);
     try {
       const result = await decideProposal(apiBaseUrl, proposalBeingReviewed.id, decision);
+      const sourceChanged = (
+        proposalBeingReviewed.action_type === "SEND_FOLLOWUP"
+        && result.errorCode === "followup_source_changed"
+      );
+      setBlockedApprovalActionId(sourceChanged ? proposalBeingReviewed.id : null);
       let nextError = result.error;
       if (result.proposal) {
         setReviewProposal(result.proposal);
@@ -726,6 +773,7 @@ export function OutreachApproval({
     </button>
     {error && !initialProposal && <p className="error" role="alert">{error}</p>}
     {initialProposal && reviewProposal && dialogOpen && <ProposalDialog
+      approvalBlocked={blockedApprovalActionId === reviewProposal.id}
       decisionInFlight={decisionInFlight}
       error={error}
       initialProposal={initialProposal}

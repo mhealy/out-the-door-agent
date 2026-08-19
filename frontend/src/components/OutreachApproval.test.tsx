@@ -106,6 +106,7 @@ const connectedInteraction = {
   sent_followup_count: 0,
   followup_limit: 2,
   followup_limit_reached: false,
+  latest_response_followup_status: null,
   messages: [inboundMessage],
   analysis: {
     message: inboundMessage,
@@ -295,7 +296,16 @@ const failedFollowupProposal = {
   delivery: null,
 } as OutreachProposal;
 
-function interactionWithFollowups(followups: OutreachProposal[]) {
+type LatestResponseFollowupStatus =
+  | "PENDING_APPROVAL"
+  | "APPROVED"
+  | "SENT"
+  | null;
+
+function interactionWithFollowups(
+  followups: OutreachProposal[],
+  latestResponseFollowupStatus: LatestResponseFollowupStatus = null,
+) {
   const sentFollowupCount = followups.filter((followup) => followup.status === "SENT").length;
   return {
     ...incompleteInteraction,
@@ -303,6 +313,7 @@ function interactionWithFollowups(followups: OutreachProposal[]) {
     sent_followup_count: sentFollowupCount,
     followup_limit: 2,
     followup_limit_reached: sentFollowupCount >= 2,
+    latest_response_followup_status: latestResponseFollowupStatus,
   };
 }
 
@@ -561,7 +572,10 @@ describe("OutreachApproval", () => {
   });
 
   it("approves the exact SEND_FOLLOWUP proposal and refreshes its original interaction history", async () => {
-    const interactionWithSentFollowup = interactionWithFollowups([sentFollowupProposal]);
+    const interactionWithSentFollowup = interactionWithFollowups(
+      [sentFollowupProposal],
+      "SENT",
+    );
     const fetchMock = vi.spyOn(globalThis, "fetch")
       .mockResolvedValueOnce(jsonResponse(pendingProposal, 201))
       .mockResolvedValueOnce(jsonResponse(sentProposal))
@@ -597,6 +611,45 @@ describe("OutreachApproval", () => {
       6,
       "http://api.test/outreach/proposals/proposal-1/interaction",
     );
+  });
+
+  it("waits for a newer dealer response after sending a follow-up from the latest analyzed response", async () => {
+    const interaction = interactionWithFollowups([sentFollowupProposal], "SENT");
+    const fetchMock = vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(jsonResponse(pendingProposal, 201))
+      .mockResolvedValueOnce(jsonResponse(sentProposal))
+      .mockResolvedValueOnce(jsonResponse(interaction));
+
+    const dialog = await openAnalyzedInteraction();
+
+    expect(within(dialog).getByText("Follow-up 1 sent")).toBeVisible();
+    expect(within(dialog).getByText("Waiting for dealer response")).toBeVisible();
+    expect(within(dialog).queryByRole("button", { name: "Prepare follow-up" }))
+      .not.toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("does not prepare another follow-up while delivery from the latest response is unconfirmed", async () => {
+    const approvedUnconfirmedFollowup = {
+      ...sentFollowupProposal,
+      status: "APPROVED",
+      delivery: null,
+    } as OutreachProposal;
+    const interaction = interactionWithFollowups(
+      [approvedUnconfirmedFollowup],
+      "APPROVED",
+    );
+    const fetchMock = vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(jsonResponse(pendingProposal, 201))
+      .mockResolvedValueOnce(jsonResponse(sentProposal))
+      .mockResolvedValueOnce(jsonResponse(interaction));
+
+    const dialog = await openAnalyzedInteraction();
+
+    expect(within(dialog).getByText("Follow-up delivery unconfirmed")).toBeVisible();
+    expect(within(dialog).queryByRole("button", { name: "Prepare follow-up" }))
+      .not.toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
   it.each([

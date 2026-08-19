@@ -6,7 +6,7 @@ from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
-from threading import Barrier
+from threading import Barrier, Event
 from time import sleep
 
 import pytest
@@ -93,6 +93,44 @@ class RecordingDrafter:
 
     async def draft(self, context: FollowupDraftContext) -> FollowupDraft:
         self.calls.append(context)
+        return FollowupDraft(
+            subject="Written quote clarification",
+            requests=[
+                FollowupDraftRequest(
+                    requirement_id=requirement.id,
+                    text=SAFE_REQUEST_TEXT[requirement.id],
+                )
+                for requirement in reversed(context.requirements)
+            ],
+        )
+
+
+class ConcurrentBarrierDrafter(RecordingDrafter):
+    def __init__(self, parties: int) -> None:
+        super().__init__()
+        self._parties = parties
+        self._entered = 0
+        self._release = asyncio.Event()
+
+    async def draft(self, context: FollowupDraftContext) -> FollowupDraft:
+        self._entered += 1
+        if self._entered == self._parties:
+            self._release.set()
+        await asyncio.wait_for(self._release.wait(), timeout=5)
+        return await super().draft(context)
+
+
+class PausingDrafter(RecordingDrafter):
+    def __init__(self) -> None:
+        super().__init__()
+        self.entered = Event()
+        self.release = Event()
+
+    async def draft(self, context: FollowupDraftContext) -> FollowupDraft:
+        self.calls.append(context)
+        self.entered.set()
+        if not self.release.wait(timeout=5):
+            raise AssertionError("The stale-draft test did not release the drafter.")
         return FollowupDraft(
             subject="Written quote clarification",
             requests=[
@@ -199,8 +237,10 @@ def _persist_analysis(
     missing_for_comparison: list[str],
     missing_for_transparency: list[str] | None = None,
     source_uncertainty: list[str] | None = None,
-) -> None:
+    source_message_id: str | None = None,
+) -> str:
     received_at = datetime.now(timezone.utc)
+    message_id = source_message_id or f"message-{initial_action_id}"
     with session_factory() as session:
         interaction = session.scalar(
             select(DealerInteractionRecord).where(
@@ -209,9 +249,9 @@ def _persist_analysis(
         )
         assert interaction is not None
         message = InboundDealerMessageRecord(
-            id=f"message-{initial_action_id}",
+            id=message_id,
             interaction_id=interaction.id,
-            source_fixture_id=f"fixture-{initial_action_id}",
+            source_fixture_id=f"fixture-{message_id}",
             dealer_id=interaction.dealer_id,
             vehicle_id=interaction.vehicle_id,
             subject="Incomplete written quote",
@@ -254,6 +294,7 @@ def _persist_analysis(
         message.analyzed_at = received_at
         session.add(message)
         session.commit()
+    return message_id
 
 
 def _prepare_followup(client: TestClient, initial_action_id: str):
@@ -432,7 +473,49 @@ def test_no_comparison_gap_never_calls_the_drafter(
     assert drafter.calls == []
 
 
-def test_approval_sends_exact_persisted_followup_once_and_history_tracks_it(
+def test_pending_followup_blocks_a_duplicate_for_the_same_source_message(
+    followup_client: tuple[
+        TestClient,
+        RecordingMessagingProvider,
+        RecordingDrafter,
+        sessionmaker[Session],
+    ],
+) -> None:
+    client, messaging, drafter, session_factory = followup_client
+    initial = _send_initial(client)
+    messaging.calls.clear()
+    source_message_id = _persist_analysis(
+        session_factory,
+        str(initial["id"]),
+        missing_for_comparison=["claimed_otd"],
+        source_message_id=f"source-a-{initial['id']}",
+    )
+    first = _prepare_followup(client, str(initial["id"]))
+    assert first.status_code == 201
+
+    duplicate = _prepare_followup(client, str(initial["id"]))
+
+    assert duplicate.status_code == 409
+    assert len(drafter.calls) == 1
+    assert messaging.calls == []
+    interaction = client.get(
+        f"/outreach/proposals/{initial['id']}/interaction"
+    ).json()
+    assert interaction["latest_response_followup_status"] == "PENDING_APPROVAL"
+    assert [item["id"] for item in interaction["followups"]] == [
+        first.json()["id"]
+    ]
+    with session_factory() as session:
+        links = session.execute(
+            text(
+                "select proposed_action_id, source_message_id "
+                "from dealer_interaction_followups"
+            )
+        ).all()
+    assert links == [(first.json()["id"], source_message_id)]
+
+
+def test_concurrent_prepares_create_only_one_proposal_for_a_source_message(
     followup_client: tuple[
         TestClient,
         RecordingMessagingProvider,
@@ -441,6 +524,112 @@ def test_approval_sends_exact_persisted_followup_once_and_history_tracks_it(
     ],
 ) -> None:
     client, messaging, _, session_factory = followup_client
+    initial = _send_initial(client)
+    messaging.calls.clear()
+    source_message_id = _persist_analysis(
+        session_factory,
+        str(initial["id"]),
+        missing_for_comparison=["claimed_otd"],
+        source_message_id=f"source-a-{initial['id']}",
+    )
+    barrier_drafter = ConcurrentBarrierDrafter(2)
+    app.dependency_overrides[get_followup_drafter] = lambda: barrier_drafter
+    start = Barrier(2)
+
+    def prepare() -> object:
+        start.wait(timeout=5)
+        return _prepare_followup(client, str(initial["id"]))
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        responses = list(executor.map(lambda _: prepare(), range(2)))
+
+    assert sorted(response.status_code for response in responses) == [201, 409]
+    assert len(barrier_drafter.calls) == 2
+    assert messaging.calls == []
+    interaction = client.get(
+        f"/outreach/proposals/{initial['id']}/interaction"
+    ).json()
+    assert interaction["latest_response_followup_status"] == "PENDING_APPROVAL"
+    assert len(interaction["followups"]) == 1
+    with session_factory() as session:
+        links = session.execute(
+            text(
+                "select proposed_action_id, source_message_id "
+                "from dealer_interaction_followups"
+            )
+        ).all()
+    assert len(links) == 1
+    assert links[0].source_message_id == source_message_id
+
+
+def test_stale_draft_is_not_persisted_after_a_newer_response_is_analyzed(
+    followup_client: tuple[
+        TestClient,
+        RecordingMessagingProvider,
+        RecordingDrafter,
+        sessionmaker[Session],
+    ],
+) -> None:
+    client, messaging, _, session_factory = followup_client
+    initial = _send_initial(client)
+    messaging.calls.clear()
+    source_a = _persist_analysis(
+        session_factory,
+        str(initial["id"]),
+        missing_for_comparison=["claimed_otd"],
+        source_message_id=f"source-a-{initial['id']}",
+    )
+    pausing_drafter = PausingDrafter()
+    app.dependency_overrides[get_followup_drafter] = lambda: pausing_drafter
+
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        pending = executor.submit(
+            _prepare_followup,
+            client,
+            str(initial["id"]),
+        )
+        assert pausing_drafter.entered.wait(timeout=5)
+        source_b = _persist_analysis(
+            session_factory,
+            str(initial["id"]),
+            missing_for_comparison=["addon_status"],
+            source_message_id=f"source-b-{initial['id']}",
+        )
+        pausing_drafter.release.set()
+        response = pending.result(timeout=5)
+
+    assert response.status_code == 409
+    assert len(pausing_drafter.calls) == 1
+    assert pausing_drafter.calls[0].latest_inbound.body
+    assert messaging.calls == []
+    interaction = client.get(
+        f"/outreach/proposals/{initial['id']}/interaction"
+    ).json()
+    assert interaction["analysis"]["message"]["id"] == source_b
+    assert interaction["latest_response_followup_status"] is None
+    assert interaction["followups"] == []
+    with session_factory() as session:
+        assert session.scalar(
+            text("select count(*) from dealer_interaction_followups")
+        ) == 0
+        assert session.scalar(
+            text(
+                "select count(*) from dealer_interaction_followups "
+                "where source_message_id = :source_message_id"
+            ),
+            {"source_message_id": source_a},
+        ) == 0
+
+
+def test_approval_sends_exact_persisted_followup_once_and_history_tracks_it(
+    followup_client: tuple[
+        TestClient,
+        RecordingMessagingProvider,
+        RecordingDrafter,
+        sessionmaker[Session],
+    ],
+) -> None:
+    client, messaging, drafter, session_factory = followup_client
     initial = _send_initial(client)
     messaging.calls.clear()
     _persist_analysis(
@@ -481,10 +670,16 @@ def test_approval_sends_exact_persisted_followup_once_and_history_tracks_it(
     assert interaction["analysis"]["assessment"]["comparable"] is False
     assert interaction["sent_followup_count"] == 1
     assert interaction["followup_limit_reached"] is False
+    assert interaction["latest_response_followup_status"] == "SENT"
     assert interaction["followups"][0] == sent
 
+    same_source = _prepare_followup(client, str(initial["id"]))
+    assert same_source.status_code == 409
+    assert len(messaging.calls) == 1
+    assert len(drafter.calls) == 1
 
-def test_rejected_and_failed_followups_do_not_consume_a_sent_round_or_retry(
+
+def test_rejected_followup_allows_a_new_explicit_proposal_for_the_same_source(
     followup_client: tuple[
         TestClient,
         RecordingMessagingProvider,
@@ -492,7 +687,7 @@ def test_rejected_and_failed_followups_do_not_consume_a_sent_round_or_retry(
         sessionmaker[Session],
     ],
 ) -> None:
-    client, messaging, _, session_factory = followup_client
+    client, messaging, drafter, session_factory = followup_client
     initial = _send_initial(client)
     messaging.calls.clear()
     _persist_analysis(
@@ -509,7 +704,47 @@ def test_rejected_and_failed_followups_do_not_consume_a_sent_round_or_retry(
     assert rejected.status_code == 200
     assert rejected.json()["status"] == "REJECTED"
     assert messaging.calls == []
+    after_rejection = client.get(
+        f"/outreach/proposals/{initial['id']}/interaction"
+    ).json()
+    assert after_rejection["sent_followup_count"] == 0
+    assert after_rejection["latest_response_followup_status"] is None
+    assert [item["status"] for item in after_rejection["followups"]] == [
+        "REJECTED"
+    ]
 
+    replacement = _prepare_followup(client, str(initial["id"]))
+
+    assert replacement.status_code == 201
+    assert replacement.json()["id"] != rejected_proposal["id"]
+    assert len(drafter.calls) == 2
+    interaction = client.get(
+        f"/outreach/proposals/{initial['id']}/interaction"
+    ).json()
+    assert interaction["sent_followup_count"] == 0
+    assert interaction["latest_response_followup_status"] == "PENDING_APPROVAL"
+    assert [item["status"] for item in interaction["followups"]] == [
+        "REJECTED",
+        "PENDING_APPROVAL",
+    ]
+
+
+def test_send_failed_followup_allows_only_a_new_explicit_same_source_proposal(
+    followup_client: tuple[
+        TestClient,
+        RecordingMessagingProvider,
+        RecordingDrafter,
+        sessionmaker[Session],
+    ],
+) -> None:
+    client, messaging, drafter, session_factory = followup_client
+    initial = _send_initial(client)
+    messaging.calls.clear()
+    _persist_analysis(
+        session_factory,
+        str(initial["id"]),
+        missing_for_comparison=["claimed_otd"],
+    )
     failed_proposal = _prepare_followup(client, str(initial["id"])).json()
     messaging.fail = True
     failed = client.post(
@@ -528,15 +763,21 @@ def test_rejected_and_failed_followups_do_not_consume_a_sent_round_or_retry(
     ).json()
     assert interaction["sent_followup_count"] == 0
     assert interaction["followup_limit_reached"] is False
-    assert [item["status"] for item in interaction["followups"]] == [
-        "REJECTED",
-        "SEND_FAILED",
-    ]
+    assert interaction["latest_response_followup_status"] is None
+    assert [item["status"] for item in interaction["followups"]] == ["SEND_FAILED"]
+    assert len(messaging.calls) == 1
+
+    messaging.fail = False
+    replacement = _prepare_followup(client, str(initial["id"]))
+
+    assert replacement.status_code == 201
+    assert replacement.json()["id"] != failed_proposal["id"]
+    assert len(drafter.calls) == 2
     assert len(messaging.calls) == 1
 
 
 @pytest.mark.asyncio
-async def test_cancelled_send_releases_its_reserved_round(
+async def test_approved_unconfirmed_followup_blocks_same_source_preparation(
     followup_client: tuple[
         TestClient,
         RecordingMessagingProvider,
@@ -544,7 +785,59 @@ async def test_cancelled_send_releases_its_reserved_round(
         sessionmaker[Session],
     ],
 ) -> None:
-    client, messaging, _, session_factory = followup_client
+    client, messaging, drafter, session_factory = followup_client
+    initial = _send_initial(client)
+    messaging.calls.clear()
+    _persist_analysis(
+        session_factory,
+        str(initial["id"]),
+        missing_for_comparison=["claimed_otd"],
+    )
+    approved_proposal = _prepare_followup(client, str(initial["id"])).json()
+    blocking_provider = BlockingMessagingProvider()
+
+    with session_factory() as session:
+        service = OutreachService(
+            session=session,
+            inventory_provider=FixtureInventoryProvider(),
+            dealer_contact_resolver=FixtureDealerContactResolver(),
+            messaging_provider=blocking_provider,
+        )
+        send_task = asyncio.create_task(
+            service.approve_and_send(str(approved_proposal["id"]))
+        )
+        await blocking_provider.entered.wait()
+        try:
+            inspected = client.get(
+                f"/outreach/proposals/{approved_proposal['id']}"
+            ).json()
+            assert inspected["status"] == "APPROVED"
+            assert inspected["approval"] is not None
+            assert inspected["delivery"] is None
+            interaction = client.get(
+                f"/outreach/proposals/{initial['id']}/interaction"
+            ).json()
+            assert interaction["latest_response_followup_status"] == "APPROVED"
+
+            duplicate = _prepare_followup(client, str(initial["id"]))
+            assert duplicate.status_code == 409
+            assert len(drafter.calls) == 1
+        finally:
+            send_task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await send_task
+
+
+@pytest.mark.asyncio
+async def test_cancelled_send_remains_approved_and_keeps_its_reserved_round(
+    followup_client: tuple[
+        TestClient,
+        RecordingMessagingProvider,
+        RecordingDrafter,
+        sessionmaker[Session],
+    ],
+) -> None:
+    client, messaging, drafter, session_factory = followup_client
     initial = _send_initial(client)
     messaging.calls.clear()
     _persist_analysis(
@@ -573,23 +866,31 @@ async def test_cancelled_send_releases_its_reserved_round(
     inspected = client.get(
         f"/outreach/proposals/{cancelled_proposal['id']}"
     ).json()
-    assert inspected["status"] == "SEND_FAILED"
+    assert inspected["status"] == "APPROVED"
+    assert inspected["approval"] is not None
+    assert inspected["delivery"] is None
     interaction = client.get(
         f"/outreach/proposals/{initial['id']}/interaction"
     ).json()
     assert interaction["sent_followup_count"] == 0
     assert interaction["followup_limit_reached"] is False
+    assert interaction["latest_response_followup_status"] == "APPROVED"
+    with session_factory() as session:
+        round_state = session.execute(
+            text(
+                "select sent_count, reserved_count "
+                "from dealer_interaction_followup_states"
+            )
+        ).one()
+    assert round_state.sent_count == 0
+    assert round_state.reserved_count == 1
 
-    replacement = _prepare_followup(client, str(initial["id"])).json()
-    sent = client.post(
-        f"/outreach/proposals/{replacement['id']}/approve",
-        json={},
-    )
-    assert sent.status_code == 200
-    assert sent.json()["status"] == "SENT"
+    replacement = _prepare_followup(client, str(initial["id"]))
+    assert replacement.status_code == 409
+    assert len(drafter.calls) == 1
 
 
-def test_two_sent_followups_block_a_third_and_leave_quote_incomplete(
+def test_newer_analyzed_source_allows_second_but_two_sent_rounds_block_third(
     followup_client: tuple[
         TestClient,
         RecordingMessagingProvider,
@@ -600,21 +901,49 @@ def test_two_sent_followups_block_a_third_and_leave_quote_incomplete(
     client, messaging, drafter, session_factory = followup_client
     initial = _send_initial(client)
     messaging.calls.clear()
-    _persist_analysis(
+    source_a = _persist_analysis(
         session_factory,
         str(initial["id"]),
         missing_for_comparison=["claimed_otd"],
+        source_message_id=f"source-a-{initial['id']}",
     )
 
-    sent_followups: list[dict[str, object]] = []
-    for _ in range(2):
-        proposal = _prepare_followup(client, str(initial["id"])).json()
-        response = client.post(
-            f"/outreach/proposals/{proposal['id']}/approve",
-            json={},
-        )
-        assert response.status_code == 200
-        sent_followups.append(response.json())
+    first_proposal = _prepare_followup(client, str(initial["id"])).json()
+    first = client.post(
+        f"/outreach/proposals/{first_proposal['id']}/approve",
+        json={},
+    )
+    assert first.status_code == 200
+
+    source_b = _persist_analysis(
+        session_factory,
+        str(initial["id"]),
+        missing_for_comparison=["addon_status"],
+        source_message_id=f"source-b-{initial['id']}",
+    )
+    after_new_response = client.get(
+        f"/outreach/proposals/{initial['id']}/interaction"
+    ).json()
+    assert after_new_response["analysis"]["message"]["id"] == source_b
+    assert after_new_response["latest_response_followup_status"] is None
+    assert after_new_response["sent_followup_count"] == 1
+
+    second_proposal_response = _prepare_followup(client, str(initial["id"]))
+    assert second_proposal_response.status_code == 201
+    second_proposal = second_proposal_response.json()
+    assert second_proposal["requested_information"] == ["addon_status"]
+    second = client.post(
+        f"/outreach/proposals/{second_proposal['id']}/approve",
+        json={},
+    )
+    assert second.status_code == 200
+
+    source_c = _persist_analysis(
+        session_factory,
+        str(initial["id"]),
+        missing_for_comparison=["financing_dependency"],
+        source_message_id=f"source-c-{initial['id']}",
+    )
 
     third = _prepare_followup(client, str(initial["id"]))
 
@@ -629,7 +958,20 @@ def test_two_sent_followups_block_a_third_and_leave_quote_incomplete(
     assert interaction["sent_followup_count"] == 2
     assert interaction["followup_limit"] == 2
     assert interaction["followup_limit_reached"] is True
-    assert interaction["followups"] == sent_followups
+    assert interaction["analysis"]["message"]["id"] == source_c
+    assert interaction["latest_response_followup_status"] is None
+    assert interaction["followups"] == [first.json(), second.json()]
+    with session_factory() as session:
+        links = session.execute(
+            text(
+                "select proposed_action_id, source_message_id "
+                "from dealer_interaction_followups order by created_at"
+            )
+        ).all()
+    assert links == [
+        (first_proposal["id"], source_a),
+        (second_proposal["id"], source_b),
+    ]
 
 
 def test_concurrent_distinct_approvals_cannot_exceed_the_remaining_slot(
@@ -643,10 +985,11 @@ def test_concurrent_distinct_approvals_cannot_exceed_the_remaining_slot(
     client, messaging, _, session_factory = followup_client
     initial = _send_initial(client)
     messaging.calls.clear()
-    _persist_analysis(
+    source_a = _persist_analysis(
         session_factory,
         str(initial["id"]),
         missing_for_comparison=["claimed_otd"],
+        source_message_id=f"source-a-{initial['id']}",
     )
     first = _prepare_followup(client, str(initial["id"])).json()
     assert client.post(
@@ -655,10 +998,21 @@ def test_concurrent_distinct_approvals_cannot_exceed_the_remaining_slot(
     ).status_code == 200
     messaging.calls.clear()
 
-    pending = [
-        _prepare_followup(client, str(initial["id"])).json()
-        for _ in range(2)
-    ]
+    source_b = _persist_analysis(
+        session_factory,
+        str(initial["id"]),
+        missing_for_comparison=["addon_status"],
+        source_message_id=f"source-b-{initial['id']}",
+    )
+    pending_b = _prepare_followup(client, str(initial["id"])).json()
+    source_c = _persist_analysis(
+        session_factory,
+        str(initial["id"]),
+        missing_for_comparison=["financing_dependency"],
+        source_message_id=f"source-c-{initial['id']}",
+    )
+    pending_c = _prepare_followup(client, str(initial["id"])).json()
+    pending = [pending_b, pending_c]
     messaging.delay = True
     start = Barrier(2)
 
@@ -681,6 +1035,17 @@ def test_concurrent_distinct_approvals_cannot_exceed_the_remaining_slot(
     ).json()
     assert interaction["sent_followup_count"] == 2
     assert interaction["followup_limit_reached"] is True
+    assert sum(
+        item["status"] == "SENT" for item in interaction["followups"]
+    ) == 2
+    with session_factory() as session:
+        links = session.execute(
+            text(
+                "select source_message_id from dealer_interaction_followups "
+                "order by created_at"
+            )
+        ).scalars().all()
+    assert links == [source_a, source_b, source_c]
 
 
 def test_followup_requires_analyzed_interaction(

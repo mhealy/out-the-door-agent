@@ -1,8 +1,8 @@
 # OutTheDoor
 
-OutTheDoor is an agentic AI buyer advocate for vehicle purchasing. It is designed to acquire and interpret written dealer offers, preserve evidence for material financial claims, and compare true out-the-door economics while keeping outbound dealer communication under explicit human control. The current vertical slices provide deterministic fixture inventory search and bounded model-backed analysis of fixture dealer responses, followed by deterministic vehicle-identity, quote-completeness, transparency, and arithmetic assessment.
+OutTheDoor is an agentic AI buyer advocate for vehicle purchasing. It is designed to acquire and interpret written dealer offers, preserve evidence for material financial claims, and compare true out-the-door economics while keeping outbound dealer communication under explicit human control. The current vertical slices provide deterministic fixture inventory search, approval-gated initial quote requests, and bounded model-backed analysis of fixture dealer responses, followed by deterministic vehicle-identity, quote-completeness, transparency, and arithmetic assessment.
 
-> Screenshot/GIF placeholder — the buyer workspace now includes inventory search and the dealer-response analysis lab; a polished demo capture remains follow-up documentation work.
+> Screenshot/GIF placeholder — the buyer workspace now includes inventory search, exact-message outreach approval, and the dealer-response analysis lab; a polished demo capture remains follow-up documentation work.
 
 ## Architecture
 
@@ -16,9 +16,9 @@ React + TypeScript buyer workspace
               │
               ▼
      SQLAlchemy 2 + SQLite
-
-LangGraph orchestration is intentionally deferred to a later issue. Quote extraction is a task-scoped provider call with no tools; deterministic services validate every evidence reference and source excerpt before applying comparison requirements and Decimal-based arithmetic. A quote can therefore be comparable without being transparent, and reconciliation remains unknown whenever line-item arithmetic is incomplete or ambiguous.
 ```
+
+LangGraph orchestration is intentionally deferred to a later issue. Initial outreach is composed deterministically because application policy already knows every required field; immutable proposals, exact approval snapshots, and delivery receipts are persisted before and after the fixture transport boundary. Quote extraction is a task-scoped provider call with no tools; deterministic services validate every evidence reference and source excerpt before applying comparison requirements and Decimal-based arithmetic. A quote can therefore be comparable without being transparent, and reconciliation remains unknown whenever line-item arithmetic is incomplete or ambiguous.
 
 The backend keeps domain contracts, deterministic services, external providers, API routes, orchestration, and persistence in separate packages. The implemented vertical slices stay within those boundaries while later orchestration and purchasing capabilities remain deferred.
 
@@ -106,6 +106,7 @@ pytest
 Run the frontend production check from `frontend/`:
 
 ```powershell
+npm test
 npm run build
 ```
 
@@ -133,13 +134,16 @@ This post-correction reference command passed all strict assertions. The initial
 
 ## Demo mode
 
-Start both applications and open `http://localhost:5173`. The top workspace searches the canonical Houston-area fixture inventory. In **Dealer response lab**, choose one of 15 raw response fixtures and select **Analyze response**. With a configured model key, the original message appears beside its typed quote extraction and deterministic assessment; evidence actions reveal exact supporting excerpts. The assessment shows comparable, transparent, and reconciled states independently, separates source-stated uncertainty from application-policy gaps, and explains reconciliation as known line items minus claimed OTD.
+Start both applications and open `http://localhost:5173`. The top workspace searches the canonical Houston-area fixture inventory. Each candidate offers **Prepare quote request**. The approval dialog shows the exact candidate, fictitious `.example.test` recipient, subject, full deterministic body, reason, and requested-information checklist before any send. **Approve & send** records the approval before using the side-effect-free fixture provider and then shows its persisted delivery receipt; **Reject request** records the rejection and performs no send.
+
+In **Dealer response lab**, choose one of 15 raw response fixtures and select **Analyze response**. With a configured model key, the original message appears beside its typed quote extraction and deterministic assessment; evidence actions reveal exact supporting excerpts. The assessment shows comparable, transparent, and reconciled states independently, separates source-stated uncertainty from application-policy gaps, and explains reconciliation as known line items minus claimed OTD.
 
 ## Design principles
 
 - Evidence supports economically important claims.
 - Deterministic code owns arithmetic, constraints, policy, ranking, authorization, and state transitions.
 - LLMs are reserved for bounded semantic interpretation.
+- Initial quote-request wording is deterministic and immutable because its economic content is fully specified by application policy.
 - Quote extraction records what the dealer stated, including explicitly sourced uncertainty; deterministic assessment separately owns identity, completeness, transparency, missing requirements, and arithmetic.
 - Human approval is required before outbound dealer communication.
 - Fixture providers will exercise the same application paths as live providers.
@@ -147,7 +151,9 @@ Start both applications and open `http://localhost:5173`. The top workspace sear
 
 ## Known limitations
 
-Criteria interpretation remains a fixture implementation limited to the canonical Hyundai Tucson Hybrid vocabulary. Quote analysis requires an OpenAI API key and has not yet added persistence for extracted quote records. There is no live inventory, outbound dealer messaging, approval flow, follow-up drafting, multi-dealer comparison or ranking, LangGraph orchestration, or event streaming. Those capabilities remain intentionally deferred to later issues.
+Criteria interpretation remains a fixture implementation limited to the canonical Hyundai Tucson Hybrid vocabulary. Quote analysis requires an OpenAI API key and has not yet added persistence for extracted quote records. Outbound messaging is limited to one buyer-selected candidate at a time, immutable initial drafts, fictitious contacts, and a side-effect-free fixture provider; there is no Gmail transport, draft editing, follow-up drafting, inbound response release, multi-dealer comparison or ranking, LangGraph orchestration, or event streaming.
+
+Delivery is deliberately fail-closed. If the process stops after an approved provider call but before its receipt is persisted, the proposal remains `APPROVED` with delivery unconfirmed and cannot be sent again automatically. A production transport needs idempotency/reconciliation support before an operator prepares any replacement proposal, because an unconfirmed outcome may already have reached the dealer.
 
 ## Productionization
 

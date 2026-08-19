@@ -1,7 +1,7 @@
-import { type FormEvent, useEffect, useRef, useState } from "react";
+import { type FormEvent, useEffect, useId, useRef, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 
-type DealerMessage = {
+export type DealerMessage = {
   id: string;
   dealer_id: string;
   vehicle_id: string | null;
@@ -11,7 +11,7 @@ type DealerMessage = {
   source_provider: string;
 };
 
-type Evidence = {
+export type Evidence = {
   id: string;
   source_type: "DEALER_EMAIL" | "DEALER_ATTACHMENT" | "LISTING" | "OEM_SOURCE" | "WEB_SOURCE";
   source_id: string;
@@ -64,7 +64,7 @@ type QuoteAssessment = {
   reconciliation_difference: string | null;
 };
 
-type QuoteAnalysisResponse = {
+export type QuoteAnalysisResponse = {
   message: DealerMessage;
   extraction: QuoteExtraction;
   evidence: Evidence[];
@@ -303,10 +303,12 @@ function Incentives({
   </section>;
 }
 
-function RawDealerMessage({ message }: { message: DealerMessage }) {
-  return <section className="analysis-panel raw-message-panel" aria-labelledby="raw-message-heading">
+export function RawDealerMessage({ message }: { message: DealerMessage }) {
+  const headingId = useId();
+
+  return <section className="analysis-panel raw-message-panel" aria-labelledby={headingId}>
     <p className="eyebrow">Original dealer response</p>
-    <h3 id="raw-message-heading">{message.subject ?? "No subject"}</h3>
+    <h3 id={headingId}>{message.subject ?? "No subject"}</h3>
     <p className="message-meta">
       Dealer {message.dealer_id} · {formatDate(message.received_at)} · {message.source_provider}
     </p>
@@ -344,6 +346,7 @@ function PolicyRequirements({
 }
 
 function QuoteAssessmentPanel({ assessment }: { assessment: QuoteAssessment }) {
+  const headingId = useId();
   const numericDifference = assessment.reconciliation_difference === null
     ? null
     : Number(assessment.reconciliation_difference);
@@ -355,11 +358,11 @@ function QuoteAssessmentPanel({ assessment }: { assessment: QuoteAssessment }) {
         ? `Known line items total ${currencyFormatter.format(Math.abs(numericDifference))} ${numericDifference > 0 ? "more" : "less"} than the dealer's claimed OTD.`
         : "Known line items do not reconcile with the dealer's claimed OTD.";
 
-  return <section className="analysis-panel assessment-panel" aria-labelledby="assessment-heading">
+  return <section className="analysis-panel assessment-panel" aria-labelledby={headingId}>
     <p className="eyebrow">Deterministic assessment</p>
     <div className="panel-heading">
       <div>
-        <h3 id="assessment-heading">Is this quote usable?</h3>
+        <h3 id={headingId}>Is this quote usable?</h3>
         <p className="assessment-intro">Application policy evaluates three independent dimensions. No score or dealer judgment is inferred.</p>
       </div>
     </div>
@@ -403,14 +406,15 @@ function StructuredQuote({
   selectedEvidenceId: string | null;
   onSelectEvidence: (evidenceId: string) => void;
 }) {
+  const headingId = useId();
   const { extraction, evidence } = analysis;
   const evidenceById = new Map(evidence.map((item) => [item.id, item]));
   const evidenceFor = (fieldName: string) => evidence.filter((item) => item.field_name === fieldName);
 
-  return <section className="analysis-panel structured-quote" aria-labelledby="structured-quote-heading">
+  return <section className="analysis-panel structured-quote" aria-labelledby={headingId}>
     <p className="eyebrow">Structured extraction</p>
     <div className="panel-heading">
-      <h3 id="structured-quote-heading">Dealer-stated quote facts</h3>
+      <h3 id={headingId}>Dealer-stated quote facts</h3>
       <span className="source-count">{evidence.length} evidence record{evidence.length === 1 ? "" : "s"}</span>
     </div>
 
@@ -546,6 +550,7 @@ function StructuredQuote({
 
 function EvidenceDrawer({ evidence, onClose }: { evidence: Evidence; onClose: () => void }) {
   const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const headingId = useId();
 
   useEffect(() => {
     const previouslyFocused = document.activeElement instanceof HTMLElement
@@ -556,17 +561,20 @@ function EvidenceDrawer({ evidence, onClose }: { evidence: Evidence; onClose: ()
   }, []);
 
   return <aside
-    aria-labelledby="evidence-heading"
+    aria-labelledby={headingId}
     className="evidence-drawer"
     onKeyDown={(event) => {
-      if (event.key === "Escape") onClose();
+      if (event.key === "Escape") {
+        event.stopPropagation();
+        onClose();
+      }
     }}
     role="dialog"
   >
     <div className="panel-heading">
       <div>
         <p className="eyebrow">Supporting evidence</p>
-        <h3 id="evidence-heading">{evidence.field_name.replaceAll("_", " ")}</h3>
+        <h3 id={headingId}>{evidence.field_name.replaceAll("_", " ")}</h3>
       </div>
       <button className="secondary-button" onClick={onClose} ref={closeButtonRef} type="button">Close</button>
     </div>
@@ -579,20 +587,41 @@ function EvidenceDrawer({ evidence, onClose }: { evidence: Evidence; onClose: ()
   </aside>;
 }
 
+export function QuoteAnalysisResultView({ analysis }: { analysis: QuoteAnalysisResponse }) {
+  const [selectedEvidenceId, setSelectedEvidenceId] = useState<string | null>(null);
+  const selectedEvidence = analysis.evidence.find((item) => item.id === selectedEvidenceId) ?? null;
+
+  return <>
+    <div className="analysis-grid">
+      <RawDealerMessage message={analysis.message} />
+      <div className="analysis-stack">
+        <QuoteAssessmentPanel assessment={analysis.assessment} />
+        <StructuredQuote
+          analysis={analysis}
+          selectedEvidenceId={selectedEvidenceId}
+          onSelectEvidence={setSelectedEvidenceId}
+        />
+      </div>
+    </div>
+    {selectedEvidence && <EvidenceDrawer
+      evidence={selectedEvidence}
+      key={selectedEvidence.id}
+      onClose={() => setSelectedEvidenceId(null)}
+    />}
+  </>;
+}
+
 export function QuoteAnalysisWorkspace({ apiBaseUrl }: { apiBaseUrl: string }) {
   const [requestedMessageId, setRequestedMessageId] = useState("");
-  const [selectedEvidenceId, setSelectedEvidenceId] = useState<string | null>(null);
   const fixtures = useQuery({
     queryKey: ["quote-fixtures", apiBaseUrl],
     queryFn: () => loadFixtures(apiBaseUrl),
   });
   const analysis = useMutation({
     mutationFn: (messageId: string) => analyzeMessage(apiBaseUrl, messageId),
-    onMutate: () => setSelectedEvidenceId(null),
   });
   const selectedMessageId = requestedMessageId || fixtures.data?.[0]?.id || "";
   const selectedFixture = fixtures.data?.find((message) => message.id === selectedMessageId) ?? null;
-  const selectedEvidence = analysis.data?.evidence.find((item) => item.id === selectedEvidenceId) ?? null;
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
@@ -601,7 +630,6 @@ export function QuoteAnalysisWorkspace({ apiBaseUrl }: { apiBaseUrl: string }) {
 
   const changeMessage = (messageId: string) => {
     setRequestedMessageId(messageId);
-    setSelectedEvidenceId(null);
     analysis.reset();
   };
 
@@ -641,23 +669,9 @@ export function QuoteAnalysisWorkspace({ apiBaseUrl }: { apiBaseUrl: string }) {
       <RawDealerMessage message={selectedFixture} />
     </div>}
 
-    {analysis.isSuccess && <>
-      <div className="analysis-grid">
-        <RawDealerMessage message={analysis.data.message} />
-        <div className="analysis-stack">
-          <QuoteAssessmentPanel assessment={analysis.data.assessment} />
-          <StructuredQuote
-            analysis={analysis.data}
-            selectedEvidenceId={selectedEvidenceId}
-            onSelectEvidence={setSelectedEvidenceId}
-          />
-        </div>
-      </div>
-      {selectedEvidence && <EvidenceDrawer
-        evidence={selectedEvidence}
-        key={selectedEvidence.id}
-        onClose={() => setSelectedEvidenceId(null)}
-      />}
-    </>}
+    {analysis.isSuccess && <QuoteAnalysisResultView
+      analysis={analysis.data}
+      key={analysis.data.message.id}
+    />}
   </section>;
 }

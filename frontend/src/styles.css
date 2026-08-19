@@ -468,6 +468,10 @@ button.secondary-button {
   box-shadow: 0 24px 70px rgb(14 31 19 / 32%);
 }
 
+.outreach-dialog-expanded {
+  width: min(1080px, 100%);
+}
+
 .outreach-dialog-heading,
 .outreach-actions {
   display: flex;
@@ -591,6 +595,44 @@ button.secondary-button {
   background: #f5e9c7;
 }
 
+.outreach-interaction {
+  padding: 1rem;
+  margin-top: 1rem;
+  border: 1px solid #b9cabb;
+  border-radius: 0.75rem;
+  background: #f5f7f3;
+}
+
+.outreach-interaction > .panel-heading code {
+  color: #657269;
+  font-size: 0.75rem;
+  overflow-wrap: anywhere;
+}
+
+.interaction-lifecycle {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.65rem;
+  padding: 0;
+  margin: 1rem 0 0;
+  list-style: none;
+}
+
+.interaction-lifecycle li {
+  display: grid;
+  gap: 0.3rem;
+  padding: 0.85rem;
+  border: 1px solid #a9c4af;
+  border-radius: 0.65rem;
+  color: #205b37;
+  background: #e3eee5;
+}
+
+.interaction-lifecycle span {
+  color: #657269;
+  font-size: 0.78rem;
+}
+
 .outreach-actions {
   justify-content: flex-end;
   margin-top: 1rem;
@@ -639,7 +681,7 @@ button.outreach-reject-button {
   main { padding: 3rem 1rem; }
   .quote-analysis-form { align-items: stretch; flex-direction: column; }
   .quote-analysis-form button { width: 100%; }
-  .fact-grid, .evidence-meta, .assessment-grid, .policy-grid { grid-template-columns: 1fr; }
+  .fact-grid, .evidence-meta, .assessment-grid, .policy-grid, .interaction-lifecycle { grid-template-columns: 1fr; }
   .panel-heading { align-items: flex-start; flex-direction: column; }
   .evidence-drawer { right: 1rem; bottom: 1rem; width: calc(100vw - 2rem); max-height: calc(100vh - 2rem); }
   .outreach-backdrop { align-items: start; padding: 1rem; }

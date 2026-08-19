@@ -3,6 +3,9 @@ from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.domain.evidence import Evidence
+from app.domain.message import DealerMessage
+
 
 class MoneyItem(BaseModel):
     name: str
@@ -56,6 +59,15 @@ class QuoteAssessmentContext(BaseModel):
     expected_vehicle_id: str | None = None
     expected_vin: str | None = None
     expected_stock_number: str | None = None
+
+
+class QuoteAnalysisResult(BaseModel):
+    """Evidence-validated extraction and deterministic assessment for one message."""
+
+    message: DealerMessage
+    extraction: QuoteExtraction
+    evidence: list[Evidence]
+    assessment: QuoteAssessment
 
 
 class InteractionMetrics(BaseModel):

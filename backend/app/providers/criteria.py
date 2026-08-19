@@ -4,6 +4,33 @@ from typing import Protocol
 from app.domain.criteria import CriteriaExtractionResult, VehicleSearchCriteria
 
 
+SUPPORTED_REQUIRED_FEATURES = (
+    ("panoramic roof", "panoramic roof"),
+    ("heated seats", "heated seats"),
+    ("awd", "AWD"),
+)
+SUPPORTED_EXCLUDED_FEATURES = (
+    ("panoramic roof", "panoramic roof"),
+    ("heated seats", "heated seats"),
+    ("sunroof", "sunroof"),
+    ("damage", "damage"),
+    ("awd", "AWD"),
+)
+SUPPORTED_EXCLUDED_COLORS = ("black", "white", "gray", "silver", "red")
+
+
+def _unsupported_expression_text(expression: str, supported_terms: tuple[str, ...]) -> str:
+    remaining = expression
+    for term in sorted(supported_terms, key=len, reverse=True):
+        remaining = re.sub(rf"\b{re.escape(term)}\b", " ", remaining)
+    remaining = re.sub(
+        r"\b(?:and|or|a|an|the|exterior|interior|cars?|colors?)\b",
+        " ",
+        remaining,
+    )
+    return " ".join(remaining.split()).strip(" -")
+
+
 class CriteriaInterpreter(Protocol):
     async def interpret(self, goal: str) -> CriteriaExtractionResult: ...
 
@@ -36,7 +63,7 @@ class FixtureCriteriaInterpreter:
             )
 
         location = re.search(
-            r"(?:\bnear\b|\baround\b|\bin\b|\bof\b)\s+"
+            r"(?:\bnear\b|\baround\b|\bin\b|\bof\b|\bfrom\b)\s+"
             r"(.+?)(?=\s+(?:under|below|within|with|and|for)\b|[.!?]|$)",
             lowered,
         )
@@ -58,14 +85,33 @@ class FixtureCriteriaInterpreter:
         required_feature_phrase = re.search(
             r"\b(?:require|must have)\b\s+([^.,;]+)", lowered
         )
-        if required_feature_phrase and not re.search(
-            r"\b(?:awd|panoramic roof|heated seats)\b",
-            required_feature_phrase.group(1),
-        ):
-            raise UnsupportedCriteriaError(
-                "The fixture interpreter cannot represent the explicitly required "
-                f"feature '{required_feature_phrase.group(1).strip()}'."
+        if required_feature_phrase:
+            unsupported_required = _unsupported_expression_text(
+                required_feature_phrase.group(1),
+                tuple(keyword for keyword, _ in SUPPORTED_REQUIRED_FEATURES),
             )
+            if unsupported_required:
+                raise UnsupportedCriteriaError(
+                    "The fixture interpreter cannot represent the explicitly required "
+                    f"feature '{unsupported_required}'."
+                )
+
+        exclusion_phrases = re.findall(
+            r"\b(?:avoid|exclude|no)\b\s+([^.,;]+)", lowered
+        )
+        supported_exclusions = (
+            *(keyword for keyword, _ in SUPPORTED_EXCLUDED_FEATURES),
+            *SUPPORTED_EXCLUDED_COLORS,
+        )
+        for exclusion_phrase in exclusion_phrases:
+            unsupported_exclusion = _unsupported_expression_text(
+                exclusion_phrase, supported_exclusions
+            )
+            if unsupported_exclusion:
+                raise UnsupportedCriteriaError(
+                    "The fixture interpreter cannot represent the explicit exclusion "
+                    f"'{unsupported_exclusion}'."
+                )
 
         years = [int(value) for value in re.findall(r"\b20\d{2}\b", goal)]
         distance = re.search(r"(?:within|under)\s+(\d+)\s+miles?", lowered)
@@ -85,18 +131,14 @@ class FixtureCriteriaInterpreter:
             trims.remove("SEL")
         required_features = [
             feature
-            for keyword, feature in (
-                ("awd", "AWD"),
-                ("panoramic roof", "panoramic roof"),
-                ("heated seats", "heated seats"),
-            )
+            for keyword, feature in SUPPORTED_REQUIRED_FEATURES
             if required_feature_phrase
             and re.search(rf"\b{keyword}\b", required_feature_phrase.group(1))
         ]
         excluded_features = [
             feature
-            for feature in ("panoramic roof", "sunroof", "damage")
-            if re.search(rf"\b(?:avoid|no|exclude)\b[^.]*\b{feature}\b", lowered)
+            for keyword, feature in SUPPORTED_EXCLUDED_FEATURES
+            if re.search(rf"\b(?:avoid|no|exclude)\b[^.]*\b{keyword}\b", lowered)
         ]
         preferred_colors = [
             color.title()
@@ -105,7 +147,7 @@ class FixtureCriteriaInterpreter:
         ]
         excluded_exterior_colors = [
             color.title()
-            for color in ("black", "white", "gray", "silver", "red")
+            for color in SUPPORTED_EXCLUDED_COLORS
             if re.search(
                 rf"\b(?:avoid|no|exclude)\b[^.]*\b{color}\b(?:\s+exterior)?", lowered
             )
@@ -113,7 +155,7 @@ class FixtureCriteriaInterpreter:
         ]
         excluded_interior_colors = [
             color.title()
-            for color in ("black", "white", "gray", "silver", "red")
+            for color in SUPPORTED_EXCLUDED_COLORS
             if re.search(rf"\b{color}\s+interior\b", lowered)
         ]
         assumptions: list[str] = []
@@ -133,16 +175,19 @@ class FixtureCriteriaInterpreter:
         if not trims:
             ambiguities.append("No trim was specified; all trims remain eligible.")
 
+        requests_new = bool(re.search(r"\bnew\b", lowered))
+        requests_used = bool(re.search(r"\bused\b", lowered))
+
         criteria = VehicleSearchCriteria(
             make="Hyundai",
             model="Tucson Hybrid",
             trims=trims,
             condition=(
                 "either"
-                if ("new" in lowered and "used" in lowered)
-                or ("new" not in lowered and "used" not in lowered)
+                if (requests_new and requests_used)
+                or (not requests_new and not requests_used)
                 else "used"
-                if "used" in lowered
+                if requests_used
                 else "new"
             ),
             years=years,

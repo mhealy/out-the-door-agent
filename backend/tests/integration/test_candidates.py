@@ -60,6 +60,20 @@ def test_search_rejects_unsupported_fixture_location_without_rewriting() -> None
     assert "Houston" in response.json()["detail"]["message"]
 
 
+def test_search_rejects_distance_from_unsupported_fixture_location() -> None:
+    with TestClient(app) as client:
+        response = client.post(
+            "/candidates/search",
+            json={
+                "goal": "Find me a Hyundai Tucson Hybrid within 40 miles from Dallas"
+            },
+        )
+
+    assert response.status_code == 422
+    assert response.json()["detail"]["code"] == "unsupported_fixture_criteria"
+    assert "Dallas" in response.json()["detail"]["message"]
+
+
 def test_search_returns_interpretation_and_only_qualified_candidates() -> None:
     with TestClient(app) as client:
         response = client.post(

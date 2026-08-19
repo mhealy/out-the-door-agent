@@ -11,6 +11,7 @@ from app.providers.criteria import FixtureCriteriaInterpreter, UnsupportedCriter
         ("Find a new or used Hyundai Tucson Hybrid", "either"),
         ("Find either new or used Hyundai Tucson Hybrid", "either"),
         ("Find a Hyundai Tucson Hybrid", "either"),
+        ("Find a Hyundai Tucson Hybrid with an unused warranty", "either"),
     ],
 )
 async def test_fixture_interpreter_preserves_condition_intent(
@@ -47,6 +48,34 @@ async def test_fixture_interpreter_rejects_unsupported_explicit_feature() -> Non
     with pytest.raises(UnsupportedCriteriaError, match="feature"):
         await FixtureCriteriaInterpreter().interpret(
             "Find a Hyundai Tucson Hybrid that must have leather seats"
+        )
+
+
+async def test_fixture_interpreter_rejects_partially_unsupported_required_features() -> None:
+    with pytest.raises(UnsupportedCriteriaError, match="leather seats"):
+        await FixtureCriteriaInterpreter().interpret(
+            "Find a Hyundai Tucson Hybrid that must have AWD and leather seats"
+        )
+
+
+@pytest.mark.parametrize(
+    "goal",
+    [
+        "Find a Hyundai Tucson Hybrid. Avoid green exterior.",
+        "Find a Hyundai Tucson Hybrid. No ventilated seats.",
+    ],
+)
+async def test_fixture_interpreter_rejects_unsupported_explicit_exclusions(
+    goal: str,
+) -> None:
+    with pytest.raises(UnsupportedCriteriaError, match="exclusion"):
+        await FixtureCriteriaInterpreter().interpret(goal)
+
+
+async def test_fixture_interpreter_rejects_distance_from_unsupported_location() -> None:
+    with pytest.raises(UnsupportedCriteriaError, match="Dallas"):
+        await FixtureCriteriaInterpreter().interpret(
+            "Find a Hyundai Tucson Hybrid within 40 miles from Dallas"
         )
 
 

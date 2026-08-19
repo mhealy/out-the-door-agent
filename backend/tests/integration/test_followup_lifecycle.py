@@ -621,6 +621,125 @@ def test_stale_draft_is_not_persisted_after_a_newer_response_is_analyzed(
         ) == 0
 
 
+def test_stale_pending_followup_cannot_be_approved_after_a_newer_analysis(
+    followup_client: tuple[
+        TestClient,
+        RecordingMessagingProvider,
+        RecordingDrafter,
+        sessionmaker[Session],
+    ],
+) -> None:
+    client, messaging, drafter, session_factory = followup_client
+    initial = _send_initial(client)
+    messaging.calls.clear()
+    source_a = _persist_analysis(
+        session_factory,
+        str(initial["id"]),
+        missing_for_comparison=["claimed_otd"],
+        source_message_id=f"source-a-{initial['id']}",
+    )
+    proposal_a = _prepare_followup(client, str(initial["id"])).json()
+    assert proposal_a["status"] == "PENDING_APPROVAL"
+    assert proposal_a["requested_information"] == ["claimed_otd"]
+
+    source_b = _persist_analysis(
+        session_factory,
+        str(initial["id"]),
+        missing_for_comparison=["addon_status"],
+        source_message_id=f"source-b-{initial['id']}",
+    )
+    after_new_response = client.get(
+        f"/outreach/proposals/{initial['id']}/interaction"
+    ).json()
+    assert after_new_response["analysis"]["message"]["id"] == source_b
+    assert after_new_response["latest_response_followup_status"] is None
+
+    stale_approval = client.post(
+        f"/outreach/proposals/{proposal_a['id']}/approve",
+        json={},
+    )
+
+    assert stale_approval.status_code == 409
+    assert stale_approval.json()["detail"]["code"] == "followup_source_changed"
+    assert messaging.calls == []
+    stale_proposal = client.get(
+        f"/outreach/proposals/{proposal_a['id']}"
+    ).json()
+    assert stale_proposal["status"] == "PENDING_APPROVAL"
+    assert stale_proposal["approval"] is None
+    assert stale_proposal["delivery"] is None
+    interaction = client.get(
+        f"/outreach/proposals/{initial['id']}/interaction"
+    ).json()
+    assert interaction["sent_followup_count"] == 0
+    assert interaction["followup_limit_reached"] is False
+    assert [item["status"] for item in interaction["followups"]] == [
+        "PENDING_APPROVAL"
+    ]
+    with session_factory() as session:
+        round_state = session.execute(
+            text(
+                "select sent_count, reserved_count "
+                "from dealer_interaction_followup_states"
+            )
+        ).one()
+        assert (round_state.sent_count, round_state.reserved_count) == (0, 0)
+        assert session.scalar(
+            text(
+                "select count(*) from approvals "
+                "where proposed_action_id = :action_id"
+            ),
+            {"action_id": proposal_a["id"]},
+        ) == 0
+        assert session.scalar(
+            text(
+                "select count(*) from outbound_deliveries "
+                "where proposed_action_id = :action_id"
+            ),
+            {"action_id": proposal_a["id"]},
+        ) == 0
+
+    prepared_b = _prepare_followup(client, str(initial["id"]))
+
+    assert prepared_b.status_code == 201
+    proposal_b = prepared_b.json()
+    assert proposal_b["status"] == "PENDING_APPROVAL"
+    assert proposal_b["requested_information"] == ["addon_status"]
+    assert len(drafter.calls) == 2
+    approved_b = client.post(
+        f"/outreach/proposals/{proposal_b['id']}/approve",
+        json={},
+    )
+    assert approved_b.status_code == 200
+    assert approved_b.json()["status"] == "SENT"
+    assert len(messaging.calls) == 1
+    assert messaging.calls[0].action_id == proposal_b["id"]
+    final_interaction = client.get(
+        f"/outreach/proposals/{initial['id']}/interaction"
+    ).json()
+    assert final_interaction["analysis"]["message"]["id"] == source_b
+    assert final_interaction["sent_followup_count"] == 1
+    assert final_interaction["latest_response_followup_status"] == "SENT"
+    with session_factory() as session:
+        links = session.execute(
+            text(
+                "select proposed_action_id, source_message_id "
+                "from dealer_interaction_followups order by created_at"
+            )
+        ).all()
+        round_state = session.execute(
+            text(
+                "select sent_count, reserved_count "
+                "from dealer_interaction_followup_states"
+            )
+        ).one()
+    assert links == [
+        (proposal_a["id"], source_a),
+        (proposal_b["id"], source_b),
+    ]
+    assert (round_state.sent_count, round_state.reserved_count) == (1, 0)
+
+
 def test_approval_sends_exact_persisted_followup_once_and_history_tracks_it(
     followup_client: tuple[
         TestClient,

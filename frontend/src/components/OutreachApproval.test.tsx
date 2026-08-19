@@ -753,6 +753,56 @@ describe("OutreachApproval", () => {
     expect(within(followupDialog).queryByText("fixture-followup-1")).not.toBeInTheDocument();
   });
 
+  it("surfaces a stale follow-up approval conflict without claiming or retrying delivery", async () => {
+    const newerInboundMessage = {
+      ...inboundMessage,
+      id: "interaction-1-message-2",
+      subject: "Updated itemized quote",
+      body: "The updated written out-the-door total is $40,100.",
+      received_at: "2026-08-19T21:10:00Z",
+    };
+    const interactionWithNewerResponse = {
+      ...incompleteInteraction,
+      messages: [inboundMessage, newerInboundMessage],
+      analysis: {
+        ...incompleteInteraction.analysis,
+        message: newerInboundMessage,
+      },
+    };
+    const staleConflictMessage = "A newer dealer response was analyzed. Prepare a new follow-up.";
+    const fetchMock = vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(jsonResponse(pendingProposal, 201))
+      .mockResolvedValueOnce(jsonResponse(sentProposal))
+      .mockResolvedValueOnce(jsonResponse(incompleteInteraction))
+      .mockResolvedValueOnce(jsonResponse(pendingFollowupProposal, 201))
+      .mockResolvedValueOnce(jsonResponse({
+        detail: {
+          code: "followup_source_changed",
+          message: staleConflictMessage,
+        },
+      }, 409))
+      .mockResolvedValueOnce(jsonResponse(pendingFollowupProposal))
+      .mockResolvedValueOnce(jsonResponse(interactionWithNewerResponse));
+
+    const dialog = await openAnalyzedInteraction();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Prepare follow-up" }));
+    const followupDialog = await screen.findByRole("dialog", { name: "Review dealer follow-up" });
+    fireEvent.click(within(followupDialog).getByRole("button", { name: "Approve & send" }));
+
+    expect(await within(followupDialog).findByRole("alert")).toHaveTextContent(staleConflictMessage);
+    expect(within(followupDialog).getByText("0 of 2 follow-ups sent")).toBeVisible();
+    expect(within(followupDialog).queryByText("Sent through the fixture provider"))
+      .not.toBeInTheDocument();
+    expect(within(followupDialog).queryByText("fixture-followup-1")).not.toBeInTheDocument();
+    expect(within(followupDialog).queryByText("Follow-up 1 sent")).not.toBeInTheDocument();
+    await waitFor(() => {
+      const approvalCalls = fetchMock.mock.calls.filter(([url]) => (
+        url === "http://api.test/outreach/proposals/followup-1/approve"
+      ));
+      expect(approvalCalls).toHaveLength(1);
+    });
+  });
+
   it.each([
     ["PENDING_APPROVAL", pendingProposal],
     ["REJECTED", { ...pendingProposal, status: "REJECTED" }],

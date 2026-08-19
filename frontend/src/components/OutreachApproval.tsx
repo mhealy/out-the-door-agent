@@ -43,7 +43,7 @@ type DeliveryReceipt = {
 
 export type OutreachProposal = {
   id: string;
-  action_type: "SEND_INITIAL_QUOTE_REQUEST";
+  action_type: "SEND_INITIAL_QUOTE_REQUEST" | "SEND_FOLLOWUP";
   dealer_id: string;
   vehicle_id: string;
   recipient: string;
@@ -74,6 +74,10 @@ type OutreachInteraction = {
     | "ANALYZED"
     | "ANALYSIS_FAILED";
   analysis_error_code: string | null;
+  followups: OutreachProposal[];
+  sent_followup_count: number;
+  followup_limit: number;
+  followup_limit_reached: boolean;
   messages: DealerMessage[];
   analysis: QuoteAnalysisResponse | null;
 };
@@ -110,6 +114,21 @@ async function prepareProposal(apiBaseUrl: string, vehicleId: string): Promise<O
   });
   if (!response.ok) {
     throw new Error(await errorMessage(response, "The quote request could not be prepared."));
+  }
+  return response.json() as Promise<OutreachProposal>;
+}
+
+async function prepareFollowup(
+  apiBaseUrl: string,
+  initialActionId: string,
+): Promise<OutreachProposal> {
+  const response = await fetch(`${apiBaseUrl}/outreach/proposals/${initialActionId}/followups`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: "{}",
+  });
+  if (!response.ok) {
+    throw new Error(await errorMessage(response, "The dealer follow-up could not be prepared."));
   }
   return response.json() as Promise<OutreachProposal>;
 }
@@ -250,23 +269,107 @@ function ProposalStatus({ proposal, error }: { proposal: OutreachProposal; error
   return null;
 }
 
+function SentFollowupHistory({ followups }: { followups: OutreachProposal[] }) {
+  const sentFollowups = followups.filter((followup) => followup.status === "SENT");
+  const unsuccessfulFollowups = followups.filter((followup) => (
+    followup.status === "REJECTED" || followup.status === "SEND_FAILED"
+  ));
+
+  if (!sentFollowups.length && !unsuccessfulFollowups.length) return null;
+
+  return <section className="followup-history" aria-labelledby="followup-history-heading">
+    <h4 id="followup-history-heading">Follow-up history</h4>
+    {!!sentFollowups.length && <ol>
+      {sentFollowups.map((followup, index) => {
+        const snapshot = followup.approval?.action_snapshot;
+        return <li key={followup.id}>
+          <div className="followup-history-heading">
+            <strong>Follow-up {index + 1} sent</strong>
+            {followup.delivery && <span>{followup.delivery.sent_at}</span>}
+          </div>
+          <dl>
+            <div><dt>Recipient</dt><dd>{snapshot?.recipient ?? followup.recipient}</dd></div>
+            <div><dt>Subject</dt><dd>{snapshot?.subject ?? followup.subject}</dd></div>
+          </dl>
+          <pre>{snapshot?.body ?? followup.body}</pre>
+        </li>;
+      })}
+    </ol>}
+    {!!unsuccessfulFollowups.length && <ul className="followup-attempts">
+      {unsuccessfulFollowups.map((followup) => <li key={followup.id}>
+        <strong>{followup.status === "SEND_FAILED"
+          ? "Follow-up delivery failed"
+          : "Follow-up rejected"}</strong>
+        <span>{followup.subject}</span>
+      </li>)}
+    </ul>}
+  </section>;
+}
+
+function FollowupControls({
+  interaction,
+  awaitingApproval,
+  preparing,
+  onPrepare,
+}: {
+  interaction: OutreachInteraction;
+  awaitingApproval: boolean;
+  preparing: boolean;
+  onPrepare: () => void;
+}) {
+  const missingForComparison = interaction.analysis?.assessment.missing_for_comparison ?? [];
+  const needsClarification = missingForComparison.length > 0;
+
+  return <section
+    aria-labelledby="followup-controls-heading"
+    className={`followup-controls${needsClarification ? "" : " followup-controls-complete"}`}
+  >
+    <div>
+      <p className="eyebrow">{needsClarification ? "Needs clarification" : "Follow-up status"}</p>
+      <h4 id="followup-controls-heading">
+        {needsClarification ? "Request the comparison-critical gaps" : "No comparison clarification required"}
+      </h4>
+      {needsClarification && <p>
+        The application policy found {missingForComparison.length} required gap{missingForComparison.length === 1 ? "" : "s"}.
+        The follow-up drafter may only turn that deterministic set into concise wording.
+      </p>}
+    </div>
+    <div className="followup-round-status">
+      <strong>{interaction.sent_followup_count} of {interaction.followup_limit} follow-ups sent</strong>
+      {needsClarification && (interaction.followup_limit_reached
+        ? <span className="followup-limit-reached">Follow-up limit reached</span>
+        : awaitingApproval
+          ? <span className="followup-awaiting-approval">Follow-up awaiting approval</span>
+        : <button disabled={preparing} onClick={onPrepare} type="button">
+          {preparing ? "Preparing follow-up…" : "Prepare follow-up"}
+        </button>)}
+    </div>
+  </section>;
+}
+
 function ProposalDialog({
   proposal,
+  initialProposal,
   decisionInFlight,
   interaction,
+  prepareFollowupInFlight,
   releaseInFlight,
   error,
   onApprove,
+  onPrepareFollowup,
   onRelease,
   onReject,
   onClose,
 }: {
   proposal: OutreachProposal;
+  initialProposal: OutreachProposal;
   decisionInFlight: "approve" | "reject" | null;
   interaction: OutreachInteraction | null;
+  prepareFollowupInFlight: boolean;
   releaseInFlight: boolean;
   error: string | null;
   onApprove: () => void;
+  onPrepareFollowup: () => void;
   onRelease: () => void;
   onReject: () => void;
   onClose: () => void;
@@ -275,9 +378,10 @@ function ProposalDialog({
   const dialogRef = useRef<HTMLElement>(null);
   const identifiers = vehicleIdentifiers(proposal.vehicle);
   const isDeciding = decisionInFlight !== null;
-  const isBusy = isDeciding || releaseInFlight;
+  const isBusy = isDeciding || prepareFollowupInFlight || releaseInFlight;
   const latestMessage = interaction?.messages.at(-1) ?? null;
   const messageCount = interaction?.messages.length ?? 0;
+  const isFollowup = proposal.action_type === "SEND_FOLLOWUP";
 
   useEffect(() => {
     const previouslyFocused = document.activeElement instanceof HTMLElement
@@ -331,7 +435,9 @@ function ProposalDialog({
       <div className="outreach-dialog-heading">
         <div>
           <p className="eyebrow">Human approval required</p>
-          <h2 id="outreach-review-heading">Review dealer quote request</h2>
+          <h2 id="outreach-review-heading">
+            {isFollowup ? "Review dealer follow-up" : "Review dealer quote request"}
+          </h2>
         </div>
         <button
           className="secondary-button"
@@ -354,7 +460,10 @@ function ProposalDialog({
           <dd>{vehicleName(proposal.vehicle)}</dd>
           {identifiers && <dd className="muted">{identifiers}</dd>}
         </div>
-        <div className="outreach-meta-wide"><dt>Why contact this dealer</dt><dd>{proposal.reason}</dd></div>
+        <div className="outreach-meta-wide">
+          <dt>{isFollowup ? "Why follow up" : "Why contact this dealer"}</dt>
+          <dd>{proposal.reason}</dd>
+        </div>
       </dl>
 
       <section className="outreach-message-review" aria-labelledby="outreach-message-heading">
@@ -379,7 +488,7 @@ function ProposalDialog({
       <ProposalStatus error={error} proposal={proposal} />
       {error && proposal.status !== "SEND_FAILED" && <p className="error" role="alert">{error}</p>}
 
-      {proposal.status === "SENT" && proposal.delivery && <section
+      {initialProposal.status === "SENT" && initialProposal.delivery && <section
         aria-labelledby="dealer-interaction-heading"
         className="outreach-interaction"
       >
@@ -388,7 +497,7 @@ function ProposalDialog({
             <p className="eyebrow">Dealer interaction</p>
             <h3 id="dealer-interaction-heading">Continue the fixture conversation</h3>
           </div>
-          <code>{interaction?.id ?? proposal.id}</code>
+          <code>{interaction?.id ?? initialProposal.id}</code>
         </div>
 
         {!latestMessage && <>
@@ -425,7 +534,15 @@ function ProposalDialog({
             </li>}
           </ol>
           {interaction?.analysis
-            ? <QuoteAnalysisResultView analysis={interaction.analysis} />
+            ? <>
+              <QuoteAnalysisResultView analysis={interaction.analysis} />
+              <FollowupControls
+                awaitingApproval={isFollowup && proposal.status === "PENDING_APPROVAL"}
+                interaction={interaction}
+                onPrepare={onPrepareFollowup}
+                preparing={prepareFollowupInFlight}
+              />
+            </>
             : <>
               <div className="analysis-grid">
                 <RawDealerMessage message={latestMessage} />
@@ -442,6 +559,7 @@ function ProposalDialog({
                     : "Resume response analysis"}
               </button>}
             </>}
+          {interaction && <SentFollowupHistory followups={interaction.followups} />}
         </>}
       </section>}
 
@@ -452,7 +570,9 @@ function ProposalDialog({
           onClick={onReject}
           type="button"
         >
-          {decisionInFlight === "reject" ? "Rejecting…" : "Reject request"}
+          {decisionInFlight === "reject"
+            ? "Rejecting…"
+            : isFollowup ? "Reject follow-up" : "Reject request"}
         </button>
         <button disabled={isDeciding} onClick={onApprove} type="button">
           {decisionInFlight === "approve" ? "Sending…" : "Approve & send"}
@@ -469,8 +589,10 @@ export function OutreachApproval({
   apiBaseUrl: string;
   candidate: OutreachCandidate;
 }) {
-  const [proposal, setProposal] = useState<OutreachProposal | null>(null);
+  const [initialProposal, setInitialProposal] = useState<OutreachProposal | null>(null);
+  const [reviewProposal, setReviewProposal] = useState<OutreachProposal | null>(null);
   const [isPreparing, setIsPreparing] = useState(false);
+  const [prepareFollowupInFlight, setPrepareFollowupInFlight] = useState(false);
   const [decisionInFlight, setDecisionInFlight] = useState<"approve" | "reject" | null>(null);
   const [releaseInFlight, setReleaseInFlight] = useState(false);
   const [interaction, setInteraction] = useState<OutreachInteraction | null>(null);
@@ -482,7 +604,9 @@ export function OutreachApproval({
     setError(null);
     setInteraction(null);
     try {
-      setProposal(await prepareProposal(apiBaseUrl, candidate.id));
+      const prepared = await prepareProposal(apiBaseUrl, candidate.id);
+      setInitialProposal(prepared);
+      setReviewProposal(prepared);
       setDialogOpen(true);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "The quote request could not be prepared.");
@@ -491,14 +615,50 @@ export function OutreachApproval({
     }
   };
 
+  const prepareInteractionFollowup = async () => {
+    if (!initialProposal || !interaction || interaction.followup_limit_reached) return;
+    const missingForComparison = interaction.analysis?.assessment.missing_for_comparison ?? [];
+    if (!missingForComparison.length) return;
+
+    setPrepareFollowupInFlight(true);
+    setError(null);
+    try {
+      setReviewProposal(await prepareFollowup(apiBaseUrl, initialProposal.id));
+    } catch (caught) {
+      setError(caught instanceof Error
+        ? caught.message
+        : "The dealer follow-up could not be prepared.");
+    } finally {
+      setPrepareFollowupInFlight(false);
+    }
+  };
+
   const decide = async (decision: "approve" | "reject") => {
-    if (!proposal) return;
+    if (!initialProposal || !reviewProposal) return;
+    const proposalBeingReviewed = reviewProposal;
     setDecisionInFlight(decision);
     setError(null);
     try {
-      const result = await decideProposal(apiBaseUrl, proposal.id, decision);
-      if (result.proposal) setProposal(result.proposal);
-      setError(result.error);
+      const result = await decideProposal(apiBaseUrl, proposalBeingReviewed.id, decision);
+      let nextError = result.error;
+      if (result.proposal) {
+        setReviewProposal(result.proposal);
+        if (proposalBeingReviewed.action_type === "SEND_INITIAL_QUOTE_REQUEST") {
+          setInitialProposal(result.proposal);
+        }
+      }
+      if (proposalBeingReviewed.action_type === "SEND_FOLLOWUP") {
+        try {
+          setInteraction(await inspectInteraction(apiBaseUrl, initialProposal.id));
+        } catch (caught) {
+          if (!nextError) {
+            nextError = caught instanceof Error
+              ? caught.message
+              : "The dealer interaction status could not be loaded.";
+          }
+        }
+      }
+      setError(nextError);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "The approval decision could not be completed.");
     } finally {
@@ -507,17 +667,17 @@ export function OutreachApproval({
   };
 
   const release = async () => {
-    if (!proposal || proposal.status !== "SENT" || !proposal.delivery) return;
+    if (!initialProposal || initialProposal.status !== "SENT" || !initialProposal.delivery) return;
     setReleaseInFlight(true);
     setError(null);
     try {
-      setInteraction(await releaseDemoResponse(apiBaseUrl, proposal.id));
+      setInteraction(await releaseDemoResponse(apiBaseUrl, initialProposal.id));
     } catch (caught) {
       const releaseError = caught instanceof Error
         ? caught.message
         : "The dealer response could not be released.";
       try {
-        const persistedInteraction = await inspectInteraction(apiBaseUrl, proposal.id);
+        const persistedInteraction = await inspectInteraction(apiBaseUrl, initialProposal.id);
         setInteraction(persistedInteraction);
         setError(persistedInteraction.analysis_status === "ANALYZED" ? null : releaseError);
       } catch {
@@ -533,7 +693,7 @@ export function OutreachApproval({
   };
 
   const openOrPrepare = () => {
-    if (proposal) {
+    if (initialProposal && reviewProposal) {
       setDialogOpen(true);
       return;
     }
@@ -544,22 +704,25 @@ export function OutreachApproval({
     <button disabled={isPreparing} onClick={openOrPrepare} type="button">
       {isPreparing
         ? "Preparing…"
-        : proposal?.status === "SENT"
+        : initialProposal?.status === "SENT"
           ? "View dealer interaction"
-          : proposal
+          : initialProposal
             ? "View quote request"
             : "Prepare quote request"}
     </button>
-    {error && !proposal && <p className="error" role="alert">{error}</p>}
-    {proposal && dialogOpen && <ProposalDialog
+    {error && !initialProposal && <p className="error" role="alert">{error}</p>}
+    {initialProposal && reviewProposal && dialogOpen && <ProposalDialog
       decisionInFlight={decisionInFlight}
       error={error}
+      initialProposal={initialProposal}
       interaction={interaction}
       onApprove={() => decide("approve")}
       onClose={close}
+      onPrepareFollowup={() => void prepareInteractionFollowup()}
       onReject={() => decide("reject")}
       onRelease={release}
-      proposal={proposal}
+      prepareFollowupInFlight={prepareFollowupInFlight}
+      proposal={reviewProposal}
       releaseInFlight={releaseInFlight}
     />}
   </>;

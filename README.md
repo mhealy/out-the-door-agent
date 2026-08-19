@@ -48,7 +48,7 @@ Install frontend dependencies:
 
 ```powershell
 cd frontend
-npm install
+npm ci
 ```
 
 Copy `.env.example` to `.env` at the repository root if you want to override defaults. Do not commit `.env` files or credentials.

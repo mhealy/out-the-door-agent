@@ -80,7 +80,9 @@ LangGraph coordinates the application. It should not contain all business logic.
 - Report test failures rather than hiding them.
 - Review `git diff` before considering a task complete.
 - Do not commit secrets, `.env` files, SQLite databases, or `ENGINEERING_SPEC.md`.
-- Push completed feature branches for review, but do not merge into `main` unless explicitly instructed after review.
+- Push completed feature branches and open a pull request into `main`.
+- The pull request must summarize the change, reference the GitHub Issue, list tests/checks run, and call out any known limitations or deviations.
+- Do not merge, squash, rebase, or close the pull request unless explicitly instructed after external review.
 
 ## Communication
 

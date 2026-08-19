@@ -85,9 +85,10 @@ def _comparison_requirements(
         for incentive in extraction.incentives
     ):
         missing.append(TRADE_DEPENDENCY)
+    # Financing and trade are the only typed eligibility dimensions available here.
+    # Any incentive represented by neither remains unresolved without parsing prose.
     if any(
-        not (incentive.eligibility_condition or "").strip()
-        and incentive.requires_financing is not True
+        incentive.requires_financing is not True
         and incentive.requires_trade is not True
         for incentive in extraction.incentives
     ):

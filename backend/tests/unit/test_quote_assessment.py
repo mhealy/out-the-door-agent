@@ -318,6 +318,25 @@ def test_incentive_without_stated_eligibility_leaves_pricing_condition_missing()
     assert "pricing_condition" in assessment.missing_for_comparison
 
 
+def test_non_modeled_buyer_eligibility_leaves_pricing_condition_missing() -> None:
+    incentive = Incentive(
+        name="Membership incentive",
+        amount="500",
+        eligibility_condition="Buyer membership must be verified",
+        requires_financing=False,
+        requires_trade=None,
+        evidence_id="membership",
+    )
+
+    assessment = assess_quote(
+        complete_extraction(incentives=[incentive]),
+        expected_identity(),
+    )
+
+    assert assessment.comparable is False
+    assert assessment.missing_for_comparison == ["pricing_condition"]
+
+
 def test_typed_incentive_dependency_can_supply_its_pricing_condition() -> None:
     incentive = Incentive(
         name="Finance rebate",
@@ -338,6 +357,57 @@ def test_typed_incentive_dependency_can_supply_its_pricing_condition() -> None:
 
     assert "pricing_condition" not in assessment.missing_for_comparison
     assert assessment.comparable is True
+
+
+def test_typed_trade_dependency_can_supply_its_pricing_condition() -> None:
+    incentive = Incentive(
+        name="Trade assistance",
+        amount="1500",
+        eligibility_condition="Requires a qualifying trade-in",
+        requires_financing=False,
+        requires_trade=True,
+        evidence_id="trade-assistance",
+    )
+
+    assessment = assess_quote(
+        complete_extraction(
+            incentives=[incentive],
+            trade_required=True,
+        ),
+        expected_identity(),
+    )
+
+    assert "pricing_condition" not in assessment.missing_for_comparison
+    assert "trade_dependency" not in assessment.missing_for_comparison
+    assert assessment.comparable is True
+
+
+def test_multiple_unmodeled_incentives_add_pricing_condition_only_once() -> None:
+    incentives = [
+        Incentive(
+            name="Membership incentive",
+            amount="500",
+            eligibility_condition="Buyer membership must be verified",
+            requires_financing=False,
+            requires_trade=False,
+            evidence_id="membership",
+        ),
+        Incentive(
+            name="Unspecified rebate",
+            amount="250",
+            eligibility_condition=None,
+            requires_financing=None,
+            requires_trade=None,
+            evidence_id="unspecified",
+        ),
+    ]
+
+    assessment = assess_quote(
+        complete_extraction(incentives=incentives),
+        expected_identity(),
+    )
+
+    assert assessment.missing_for_comparison.count("pricing_condition") == 1
 
 
 def test_incentive_dependency_conflict_keeps_quote_dependency_unresolved() -> None:
@@ -379,6 +449,7 @@ def test_known_conditional_incentive_does_not_become_an_unconditional_reduction(
     assessment = assess_quote(extraction, expected_identity())
 
     assert assessment.comparable is True
+    assert "pricing_condition" not in assessment.missing_for_comparison
     assert extraction.financing_required is True
     assert extraction.incentives == [incentive]
     assert assessment.reconciled is True
@@ -620,6 +691,13 @@ def test_inconsistent_fixture_arithmetic_is_detected_with_positive_difference() 
 
 def test_source_uncertainty_is_not_copied_into_policy_missing_lists() -> None:
     source_question = "Military eligibility has not been confirmed."
+    source_only_extraction = complete_extraction(
+        unresolved_questions=[source_question],
+    )
+    source_only_assessment = assess_quote(
+        source_only_extraction,
+        expected_identity(),
+    )
     incentive = Incentive(
         name="Military appreciation incentive",
         amount="500",
@@ -635,7 +713,11 @@ def test_source_uncertainty_is_not_copied_into_policy_missing_lists() -> None:
 
     assessment = assess_quote(extraction, expected_identity())
 
-    assert assessment.comparable is True
+    assert source_only_assessment.comparable is True
+    assert source_only_assessment.missing_for_comparison == []
+    assert source_only_assessment.missing_for_transparency == []
+    assert assessment.comparable is False
+    assert assessment.missing_for_comparison == ["pricing_condition"]
     assert source_question in extraction.unresolved_questions
     assert source_question not in assessment.missing_for_comparison
     assert source_question not in assessment.missing_for_transparency

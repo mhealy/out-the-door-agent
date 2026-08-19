@@ -88,10 +88,10 @@ EXPECTED_EXTRACTIONS = {
         ),
         (
             "msg-military-incentive",
-            True,
+            False,
             False,
             None,
-            [],
+            ["pricing_condition"],
             ["dealer_fee_detail", "government_fee_detail"],
             None,
         ),
@@ -100,7 +100,7 @@ EXPECTED_EXTRACTIONS = {
             False,
             False,
             None,
-            ["addon_status"],
+            ["addon_status", "pricing_condition"],
             [
                 "dealer_fee_detail",
                 "mandatory_addon_detail",

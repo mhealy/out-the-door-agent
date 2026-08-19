@@ -66,6 +66,37 @@ def test_plus_ttl_label_does_not_invent_complete_quote_terms() -> None:
 
     assert extraction.selling_price is not None
     assert extraction.claimed_otd is None
+    assert len(extraction.government_fees) == 1
+    assert extraction.government_fees[0].amount is None
+    assert extraction.government_fees[0].stated_mandatory is None
     assert extraction.addons == []
     assert extraction.financing_required is None
     assert extraction.trade_required is None
+    assert extraction.unresolved_questions == []
+
+
+def test_stated_mandatory_labels_require_explicit_source_language() -> None:
+    expected_values = json.loads(EXPECTED_CASES_PATH.read_text(encoding="utf-8"))
+    extractions = {
+        value["case_id"]: QuoteExtractorOutput.model_validate(
+            {"extraction": value["extraction"], "evidence": value["evidence"]}
+        ).extraction
+        for value in expected_values
+    }
+
+    mandatory_addons = extractions["msg-mandatory-addons"].addons
+    assert mandatory_addons
+    assert all(item.stated_mandatory is True for item in mandatory_addons)
+    assert all(
+        item.stated_mandatory is None
+        for case_id in (
+            "msg-fully-itemized",
+            "msg-otd-without-itemization",
+            "msg-plus-ttl",
+            "msg-mandatory-addons",
+            "msg-explicit-no-addons",
+            "msg-inconsistent-math",
+            "msg-prompt-injection",
+        )
+        for item in extractions[case_id].government_fees
+    )

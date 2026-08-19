@@ -1,7 +1,5 @@
 from functools import lru_cache
 
-from openai import AsyncOpenAI
-
 from app.config import get_settings
 from app.providers.dealer_messages import (
     DealerMessageProvider,
@@ -40,8 +38,7 @@ def get_quote_extractor() -> QuoteExtractor:
         or not settings.openai_api_key.get_secret_value().strip()
     ):
         return UnavailableQuoteExtractor("OTD_OPENAI_API_KEY is not configured.")
-    client = AsyncOpenAI(api_key=settings.openai_api_key.get_secret_value())
-    return OpenAIQuoteExtractor(
-        client=client,
+    return OpenAIQuoteExtractor.from_api_key(
+        api_key=settings.openai_api_key.get_secret_value(),
         model=settings.quote_extraction_model,
     )

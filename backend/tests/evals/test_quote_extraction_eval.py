@@ -5,7 +5,6 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
-from openai import AsyncOpenAI
 
 from app.config import Settings
 from app.domain.message import DealerMessage
@@ -491,7 +490,7 @@ class EvalMetrics:
             + self._ratio(self.collection_correct, self.collection_total),
             "Condition accuracy: "
             + self._ratio(self.condition_correct, self.condition_total),
-            "Missing-information concept accuracy: "
+            "Source-grounded uncertainty accuracy: "
             + self._ratio(self.question_correct, self.question_total),
             "Evidence attribution accuracy: "
             + self._ratio(self.evidence_correct, self.evidence_total),
@@ -526,8 +525,8 @@ def live_extractor() -> OpenAIQuoteExtractor:
             "Live quote evaluations require OTD_OPENAI_API_KEY; no evaluation was run.",
             returncode=2,
         )
-    return OpenAIQuoteExtractor(
-        client=AsyncOpenAI(api_key=settings.openai_api_key.get_secret_value()),
+    return OpenAIQuoteExtractor.from_api_key(
+        api_key=settings.openai_api_key.get_secret_value(),
         model=settings.quote_extraction_model,
     )
 

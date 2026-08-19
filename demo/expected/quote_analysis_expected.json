@@ -127,7 +127,7 @@
         {
           "name": "Tax, title, and license",
           "amount": null,
-          "stated_mandatory": true,
+          "stated_mandatory": null,
           "evidence_id": "ev-otd-only-government-fees"
         }
       ],
@@ -208,7 +208,7 @@
         {
           "name": "Tax, title, and license",
           "amount": null,
-          "stated_mandatory": true,
+          "stated_mandatory": null,
           "evidence_id": "ev-ttl-government-fees"
         }
       ],
@@ -342,7 +342,6 @@
       "explicit_no_addons_statement": false,
       "explicit_all_fees_included_statement": false,
       "unresolved_questions": [
-        "An out-the-door total without trade assistance was not provided.",
         "Dealer add-on status and fee itemization were not provided."
       ],
       "evidence_ids": [
@@ -1037,7 +1036,7 @@
         {
           "name": "Tax, title, and license",
           "amount": null,
-          "stated_mandatory": true,
+          "stated_mandatory": null,
           "evidence_id": "ev-injection-government-fees"
         }
       ],

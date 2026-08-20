@@ -490,9 +490,9 @@ class OfferComparisonService:
         self._inventory = inventory_provider
 
     async def compare(self, agent_run_ids: list[str]) -> ComparisonResult:
-        if len(agent_run_ids) < 2 or len(agent_run_ids) != len(set(agent_run_ids)):
+        if not agent_run_ids or len(agent_run_ids) != len(set(agent_run_ids)):
             raise InvalidOfferComparisonError(
-                "At least two unique AgentRun IDs are required."
+                "At least one unique AgentRun ID is required."
             )
 
         # Resolve every stable run reference before loading any other facts so an

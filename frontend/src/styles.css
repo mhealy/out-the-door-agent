@@ -1196,9 +1196,298 @@ button.outreach-reject-button {
   font: 1rem/1.6 Georgia, serif;
 }
 
+.candidate-grid-heading,
+.candidate-selection-heading,
+.purchase-start,
+.purchase-header,
+.purchase-recovery {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.candidate-grid-heading {
+  align-items: end;
+  margin-top: 2rem;
+}
+
+.candidate-grid-heading h2,
+.candidate-grid-heading p {
+  margin: 0;
+}
+
+.candidate-grid-heading p {
+  margin-top: 0.4rem;
+  color: #657269;
+}
+
+.candidate-grid-heading > span,
+.purchase-decision,
+.purchase-workflow-status {
+  width: fit-content;
+  padding: 0.35rem 0.65rem;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.candidate-grid-heading > span {
+  color: #315b40;
+  background: #e3eee5;
+}
+
+.candidate-grid article {
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.candidate-grid article.candidate-selected {
+  border-color: #39704f;
+  box-shadow: 0 0 0 3px rgb(57 112 79 / 12%);
+}
+
+.candidate-selection-heading {
+  align-items: start;
+}
+
+.candidate-selection-heading .eyebrow {
+  margin-top: 0.45rem;
+}
+
+label.candidate-selector {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: 0.4rem;
+  padding: 0.4rem 0.65rem;
+  margin: 0;
+  border: 1px solid #8ca190;
+  border-radius: 999px;
+  color: #315b40;
+  background: #f9fbf7;
+  cursor: pointer;
+  font-size: 0.8rem;
+}
+
+.candidate-selector input {
+  width: 1rem;
+  height: 1rem;
+  margin: 0;
+  accent-color: #315b40;
+}
+
+.candidate-selector:has(input:disabled) {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.purchase-start {
+  align-items: end;
+  padding: 1.25rem;
+  margin-top: 1rem;
+  border: 1px solid #76a183;
+  border-radius: 1rem;
+  background: #f9fbf7;
+}
+
+.purchase-start > div {
+  display: grid;
+  gap: 0.3rem;
+}
+
+.purchase-start span {
+  color: #657269;
+  font-size: 0.9rem;
+}
+
+.purchase-start button,
+.purchase-recovery button {
+  flex: 0 0 auto;
+  margin: 0;
+}
+
+.purchase-workspace {
+  max-width: 1240px;
+}
+
+.purchase-header {
+  align-items: start;
+}
+
+.purchase-header h1,
+.purchase-header p {
+  margin-bottom: 0;
+}
+
+.purchase-goal {
+  max-width: 720px;
+  color: #45534a;
+  font-size: 1.1rem;
+  line-height: 1.6;
+}
+
+.purchase-decision {
+  flex: 0 0 auto;
+  margin-top: 1rem;
+  color: #315b40;
+  background: #e3eee5;
+}
+
+.purchase-decision-comparison_available {
+  color: #765314;
+  background: #f5e9c7;
+}
+
+.purchase-decision-decision_ready {
+  color: #fff;
+  background: #315b40;
+}
+
+.purchase-counts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 0.75rem;
+  padding: 0;
+  margin: 2rem 0 0;
+  list-style: none;
+}
+
+.purchase-counts li {
+  padding: 0.9rem 1rem;
+  border: 1px solid #b9cabb;
+  border-radius: 0.75rem;
+  background: #fff;
+  font-weight: 750;
+  line-height: 1.35;
+}
+
+.purchase-recovery {
+  align-items: end;
+  padding: 1rem 1.25rem;
+  margin-top: 1.25rem;
+  border: 1px solid #d1ae5a;
+  border-radius: 0.9rem;
+  color: #624710;
+  background: #fff9e9;
+}
+
+.purchase-recovery p {
+  margin: 0.35rem 0 0;
+}
+
+.purchase-attention,
+.purchase-dealer-workflows {
+  padding-top: 3rem;
+  margin-top: 3rem;
+  border-top: 1px solid #b9cabb;
+}
+
+.purchase-attention h2,
+.purchase-dealer-workflows h2 {
+  margin: 0.25rem 0 0;
+  font-size: clamp(1.8rem, 4vw, 2.75rem);
+  letter-spacing: -0.035em;
+}
+
+.purchase-attention > ul {
+  display: grid;
+  gap: 0.75rem;
+  padding: 0;
+  margin: 1.25rem 0 0;
+  list-style: none;
+}
+
+.purchase-attention > ul > li,
+.purchase-empty-state {
+  padding: 1rem 1.25rem;
+  border: 1px solid #c9d6ca;
+  border-radius: 0.8rem;
+  background: #fff;
+}
+
+.purchase-attention > ul > li.purchase-attention-required {
+  border-color: #d1ae5a;
+  background: #fff9e9;
+}
+
+.purchase-attention li > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.purchase-attention li span,
+.purchase-attention li a {
+  color: #526158;
+  font-size: 0.8rem;
+}
+
+.purchase-attention li p {
+  margin: 0.55rem 0;
+}
+
+.purchase-dealer-grid {
+  display: grid;
+  gap: 1rem;
+  margin-top: 1.25rem;
+}
+
+.purchase-dealer-grid > article {
+  scroll-margin-top: 1rem;
+}
+
+.purchase-dealer-grid .agent-workflow {
+  padding-top: 1rem;
+  margin-top: 0.8rem;
+  border-top: 1px solid #d8e1d9;
+}
+
+.agent-workflow-authority-note {
+  margin: 0.75rem 0;
+  color: #657269;
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+.purchase-workflow-status {
+  display: block;
+  color: #45534a;
+  background: #edf1ec;
+}
+
+.purchase-workflow-status-approval_required,
+.purchase-workflow-status-delivery_unconfirmed,
+.purchase-workflow-status-recovery_required,
+.purchase-workflow-status-analysis_failed {
+  color: #765314;
+  background: #f5e9c7;
+}
+
+.purchase-workflow-status-offer_verified {
+  color: #205b37;
+  background: #dcefe2;
+}
+
+.purchase-workflow-status-run_failed,
+.purchase-workflow-status-run_rejected {
+  color: #8b2424;
+  background: #f7dddd;
+}
+
+.purchase-missing-workflow h3 {
+  margin: 1rem 0 0.35rem;
+}
+
+.purchase-missing-workflow p {
+  color: #526158;
+  line-height: 1.5;
+}
+
 @media (min-width: 720px) {
   .candidate-grid { grid-template-columns: repeat(2, 1fr); }
   .quote-groups { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .purchase-dealer-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 @media (min-width: 960px) {
@@ -1222,4 +1511,6 @@ button.outreach-reject-button {
   .comparison-table-scroll { margin-right: -0.25rem; }
   .comparison-winner { align-items: flex-start; flex-direction: column; }
   .comparison-price-story { grid-template-columns: 1fr; }
+  .candidate-grid-heading, .purchase-start, .purchase-header, .purchase-recovery { align-items: stretch; flex-direction: column; }
+  .purchase-start button, .purchase-recovery button { width: 100%; }
 }

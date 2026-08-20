@@ -10,6 +10,7 @@ from app.api.quotes import router as quotes_router
 from app.api.outreach import router as outreach_router
 from app.api.agent_runs import router as agent_runs_router
 from app.api.offer_comparisons import router as offer_comparisons_router
+from app.api.purchase_runs import router as purchase_runs_router
 from app.config import get_settings
 from app.persistence.db import create_schema
 
@@ -36,6 +37,7 @@ def create_app() -> FastAPI:
     application.include_router(outreach_router)
     application.include_router(agent_runs_router)
     application.include_router(offer_comparisons_router)
+    application.include_router(purchase_runs_router)
     return application
 
 

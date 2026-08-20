@@ -27,6 +27,11 @@ type Candidate = OutreachCandidate & {
 };
 type SearchResult = { interpretation: Interpretation; candidates: Candidate[] };
 type ApiErrorPayload = { detail?: string | { message?: string } };
+type PurchaseCreationAttempt = {
+  creationId: string;
+  normalizedGoal: string;
+  vehicleIds: string[];
+};
 
 const exampleGoal = "Find a new 2025 or 2026 Hyundai Tucson Hybrid Limited within 40 miles of Houston under $40,000. I prefer blue and require AWD.";
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
@@ -51,18 +56,30 @@ async function search(goal: string): Promise<SearchResult> {
 }
 
 async function createPurchase(
+  creationId: string,
   goal: string,
   vehicleIds: string[],
 ): Promise<PurchaseWorkspaceModel> {
   const response = await fetch(`${apiBaseUrl}/purchase-runs`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ goal, vehicle_ids: vehicleIds }),
+    body: JSON.stringify({ creation_id: creationId, goal, vehicle_ids: vehicleIds }),
   });
   if (!response.ok) {
     throw await responseError(response, "The purchase workspace could not be created.");
   }
   return response.json() as Promise<PurchaseWorkspaceModel>;
+}
+
+function creationAttemptMatches(
+  attempt: PurchaseCreationAttempt | null,
+  normalizedGoal: string,
+  vehicleIds: string[],
+): attempt is PurchaseCreationAttempt {
+  return attempt !== null
+    && attempt.normalizedGoal === normalizedGoal
+    && attempt.vehicleIds.length === vehicleIds.length
+    && attempt.vehicleIds.every((vehicleId, index) => vehicleId === vehicleIds[index]);
 }
 
 function purchaseIdFromLocation(): string | null {
@@ -153,6 +170,7 @@ function CandidateGrid({
   candidates,
   creationError,
   isCreating,
+  isRetry,
   onCreate,
   onSelectionChange,
   selectedIds,
@@ -160,6 +178,7 @@ function CandidateGrid({
   candidates: Candidate[];
   creationError: string | null;
   isCreating: boolean;
+  isRetry: boolean;
   onCreate: () => void;
   onSelectionChange: (candidateId: string, selected: boolean) => void;
   selectedIds: Set<string>;
@@ -191,24 +210,32 @@ function CandidateGrid({
         onClick={onCreate}
         type="button"
       >
-        {isCreating ? "Starting buying agent…" : "Start buying agent"}
+        {isCreating
+          ? "Starting buying agent…"
+          : isRetry ? "Retry buying agent" : "Start buying agent"}
       </button>
     </div>}
-    {creationError && <p className="error" role="alert">{creationError}</p>}
+    {creationError && <>
+      <p className="error" role="alert">{creationError}</p>
+      <p>Retry will reconcile this same purchase attempt rather than start another one.</p>
+    </>}
   </>;
 }
 
 export function App() {
   const [goal, setGoal] = useState(exampleGoal);
   const [purchaseId, setPurchaseId] = useState<string | null>(purchaseIdFromLocation);
+  const [purchaseAttempt, setPurchaseAttempt] = useState<PurchaseCreationAttempt | null>(null);
   const [selectedVehicleIds, setSelectedVehicleIds] = useState<Set<string>>(new Set());
   const searchMutation = useMutation({ mutationFn: search });
   const purchaseMutation = useMutation({
-    mutationFn: ({ purchaseGoal, vehicleIds }: {
+    mutationFn: ({ creationId, purchaseGoal, vehicleIds }: {
+      creationId: string;
       purchaseGoal: string;
       vehicleIds: string[];
-    }) => createPurchase(purchaseGoal, vehicleIds),
+    }) => createPurchase(creationId, purchaseGoal, vehicleIds),
     onSuccess: (workspace) => {
+      setPurchaseAttempt(null);
       showPurchaseInUrl(workspace.id);
       setPurchaseId(workspace.id);
     },
@@ -224,8 +251,14 @@ export function App() {
   const orderedSelectedVehicleIds = useMemo(() => (
     searchMutation.data?.candidates
       .filter((candidate) => selectedVehicleIds.has(candidate.id))
-      .map((candidate) => candidate.id) ?? []
+      .map((candidate) => candidate.id.trim()) ?? []
   ), [searchMutation.data, selectedVehicleIds]);
+  const normalizedGoal = goal.trim();
+  const isPurchaseRetry = purchaseMutation.isError && creationAttemptMatches(
+    purchaseAttempt,
+    normalizedGoal,
+    orderedSelectedVehicleIds,
+  );
 
   if (purchaseId) {
     return <PurchaseWorkspace apiBaseUrl={apiBaseUrl} purchaseId={purchaseId} />;
@@ -233,6 +266,7 @@ export function App() {
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
+    setPurchaseAttempt(null);
     setSelectedVehicleIds(new Set());
     purchaseMutation.reset();
     searchMutation.mutate(goal);
@@ -247,8 +281,21 @@ export function App() {
   };
   const startPurchase = () => {
     if (orderedSelectedVehicleIds.length < 2 || orderedSelectedVehicleIds.length > 5) return;
+    const creationId = creationAttemptMatches(
+      purchaseAttempt,
+      normalizedGoal,
+      orderedSelectedVehicleIds,
+    )
+      ? purchaseAttempt.creationId
+      : globalThis.crypto.randomUUID();
+    setPurchaseAttempt({
+      creationId,
+      normalizedGoal,
+      vehicleIds: [...orderedSelectedVehicleIds],
+    });
     purchaseMutation.mutate({
-      purchaseGoal: goal,
+      creationId,
+      purchaseGoal: normalizedGoal,
       vehicleIds: orderedSelectedVehicleIds,
     });
   };
@@ -268,8 +315,9 @@ export function App() {
       <InterpretedCriteria interpretation={searchMutation.data.interpretation} />
       <CandidateGrid
         candidates={searchMutation.data.candidates}
-        creationError={purchaseMutation.isError ? purchaseMutation.error.message : null}
+        creationError={isPurchaseRetry ? purchaseMutation.error.message : null}
         isCreating={purchaseMutation.isPending}
+        isRetry={isPurchaseRetry}
         onCreate={startPurchase}
         onSelectionChange={changeSelection}
         selectedIds={selectedVehicleIds}

@@ -300,15 +300,27 @@ class PurchaseWorkspaceService:
     async def create(
         self,
         *,
+        creation_id: str,
         goal: str,
         vehicle_ids: list[str],
     ) -> PurchaseWorkspace:
+        goal = goal.strip()
+        vehicle_ids = [vehicle_id.strip() for vehicle_id in vehicle_ids]
         self._validate_selection(vehicle_ids)
-        for vehicle_id in vehicle_ids:
-            if await self._inventory.get_by_id(vehicle_id) is None:
-                raise CandidateNotFoundError(vehicle_id)
-
-        purchase = self._purchases.create(goal=goal, vehicle_ids=vehicle_ids)
+        purchase = self._purchases.find_existing_creation(
+            creation_id,
+            goal=goal,
+            vehicle_ids=vehicle_ids,
+        )
+        if purchase is None:
+            for vehicle_id in vehicle_ids:
+                if await self._inventory.get_by_id(vehicle_id) is None:
+                    raise CandidateNotFoundError(vehicle_id)
+            purchase = self._purchases.create(
+                creation_id=creation_id,
+                goal=goal,
+                vehicle_ids=vehicle_ids,
+            )
         await self._recover_setup(purchase)
         return await self.get(purchase.id)
 

@@ -19,6 +19,10 @@ class PurchaseRunNotFoundError(LookupError):
     """No durable purchase exists for the supplied identifier."""
 
 
+class PurchaseCreationConflictError(RuntimeError):
+    """A caller creation identity is already bound to another intent."""
+
+
 class PurchaseChildNotFoundError(LookupError):
     """A vehicle is not selected in the supplied purchase."""
 
@@ -83,13 +87,22 @@ class PurchaseRunRepository:
     def __init__(self, session: Session) -> None:
         self._session = session
 
-    def create(self, *, goal: str, vehicle_ids: list[str]) -> PurchaseRecord:
-        purchase_id = str(uuid4())
+    def create(
+        self,
+        *,
+        creation_id: str,
+        goal: str,
+        vehicle_ids: list[str],
+    ) -> PurchaseRecord:
+        """Create once, or return the matching purchase for a repeated identity."""
+
+        normalized_goal = goal.strip()
+        purchase_id = creation_id
         now = datetime.now(timezone.utc)
         self._session.add(
             PurchaseRun(
                 id=purchase_id,
-                goal=goal,
+                goal=normalized_goal,
                 status="CREATED",
                 created_at=now,
             )
@@ -107,9 +120,50 @@ class PurchaseRunRepository:
                 for position, vehicle_id in enumerate(vehicle_ids)
             ]
         )
-        self._session.commit()
+        try:
+            self._session.commit()
+        except IntegrityError:
+            self._session.rollback()
+            existing_record = self._session.get(PurchaseRun, purchase_id)
+            if existing_record is None:
+                self._session.rollback()
+                raise
+            existing = _purchase(existing_record)
+            try:
+                self._require_matching_intent(
+                    existing,
+                    goal=normalized_goal,
+                    vehicle_ids=vehicle_ids,
+                )
+            finally:
+                self._session.rollback()
+            return existing
         self._session.expire_all()
         return self.get(purchase_id)
+
+    def find_existing_creation(
+        self,
+        creation_id: str,
+        *,
+        goal: str,
+        vehicle_ids: list[str],
+    ) -> PurchaseRecord | None:
+        """Return a matching bound identity before validating external inventory."""
+
+        record = self._session.get(PurchaseRun, creation_id)
+        if record is None:
+            self._session.rollback()
+            return None
+        purchase = _purchase(record)
+        try:
+            self._require_matching_intent(
+                purchase,
+                goal=goal.strip(),
+                vehicle_ids=vehicle_ids,
+            )
+        finally:
+            self._session.rollback()
+        return purchase
 
     def get(self, purchase_id: str) -> PurchaseRecord:
         record = self._session.get(PurchaseRun, purchase_id)
@@ -272,3 +326,16 @@ class PurchaseRunRepository:
         if record is None:
             raise PurchaseChildNotFoundError(vehicle_id)
         return record
+
+    def _require_matching_intent(
+        self,
+        purchase: PurchaseRecord,
+        *,
+        goal: str,
+        vehicle_ids: list[str],
+    ) -> None:
+        existing_vehicle_ids = [
+            link.vehicle_id for link in self.list_vehicle_links(purchase.id)
+        ]
+        if purchase.goal != goal or existing_vehicle_ids != vehicle_ids:
+            raise PurchaseCreationConflictError(purchase.id)

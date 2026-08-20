@@ -39,6 +39,7 @@ from app.persistence.models import (
     InboundDealerMessageRecord,
     ProposedActionRecord,
 )
+from app.persistence.purchases import PurchaseRunRepository
 from app.providers.dealer_messages import FixtureDealerMessageProvider
 from app.providers.inventory import FixtureInventoryProvider
 from app.providers.messaging import MessagingProviderError
@@ -224,11 +225,15 @@ def _purchase_links(harness: PurchaseHarness) -> list[dict[str, object]]:
 def _create_purchase(
     client: TestClient,
     vehicle_ids: list[str] | None = None,
+    *,
+    creation_id: str | None = None,
+    goal: str = PURCHASE_GOAL,
 ) -> dict[str, object]:
     response = client.post(
         "/purchase-runs",
         json={
-            "goal": PURCHASE_GOAL,
+            "creation_id": creation_id or str(uuid4()),
+            "goal": goal,
             "vehicle_ids": vehicle_ids or CANONICAL_VEHICLE_IDS,
         },
     )
@@ -391,7 +396,10 @@ def test_purchase_creation_rejects_invalid_or_forged_intent(
     payload: dict[str, object],
 ) -> None:
     with TestClient(app) as client:
-        response = client.post("/purchase-runs", json=payload)
+        response = client.post(
+            "/purchase-runs",
+            json={"creation_id": str(uuid4()), **payload},
+        )
 
     assert response.status_code == 422
     assert _count_rows(purchase_harness, "purchase_runs") == 0
@@ -406,6 +414,7 @@ def test_purchase_creation_rejects_unknown_inventory_before_persisting(
         response = client.post(
             "/purchase-runs",
             json={
+                "creation_id": str(uuid4()),
                 "goal": PURCHASE_GOAL,
                 "vehicle_ids": ["baytown-blue", "unknown-vehicle"],
             },
@@ -415,6 +424,205 @@ def test_purchase_creation_rejects_unknown_inventory_before_persisting(
     assert response.json()["detail"]["code"] == "candidate_not_found"
     assert _count_rows(purchase_harness, "purchase_runs") == 0
     assert _count_rows(purchase_harness, "agent_runs") == 0
+    assert purchase_harness.messaging.calls == []
+
+
+@pytest.mark.parametrize(
+    "creation_id",
+    [None, "not-a-uuid"],
+)
+def test_purchase_creation_requires_a_valid_caller_creation_identity(
+    purchase_harness: PurchaseHarness,
+    creation_id: str | None,
+) -> None:
+    payload: dict[str, object] = {
+        "goal": PURCHASE_GOAL,
+        "vehicle_ids": ["baytown-blue", "houston-white"],
+    }
+    if creation_id is not None:
+        payload["creation_id"] = creation_id
+
+    with TestClient(app) as client:
+        response = client.post("/purchase-runs", json=payload)
+
+    assert response.status_code == 422
+    assert _count_rows(purchase_harness, "purchase_runs") == 0
+    assert _count_rows(purchase_harness, "agent_runs") == 0
+    assert purchase_harness.messaging.calls == []
+
+
+def test_same_creation_identity_recovers_an_ignored_successful_response(
+    purchase_harness: PurchaseHarness,
+) -> None:
+    creation_id = str(uuid4())
+    first_payload = {
+        "creation_id": creation_id,
+        "goal": f"  {PURCHASE_GOAL}  ",
+        "vehicle_ids": CANONICAL_VEHICLE_IDS,
+    }
+    retry_payload = {
+        "creation_id": creation_id,
+        "goal": PURCHASE_GOAL,
+        "vehicle_ids": CANONICAL_VEHICLE_IDS,
+    }
+
+    with TestClient(app) as client:
+        first_response = client.post("/purchase-runs", json=first_payload)
+        assert first_response.status_code == 201, first_response.text
+        original = first_response.json()
+
+    # The caller intentionally discards the first response, as if the network lost it.
+    with TestClient(app) as retrying_client:
+        retry_response = retrying_client.post(
+            "/purchase-runs",
+            json=retry_payload,
+        )
+
+    assert retry_response.status_code == 201, retry_response.text
+    recovered = retry_response.json()
+    assert recovered["id"] == creation_id == original["id"]
+    assert recovered["goal"] == PURCHASE_GOAL
+    assert recovered["selected_vehicle_ids"] == CANONICAL_VEHICLE_IDS
+    assert {
+        vehicle_id: str(child["agent_run"]["id"])
+        for vehicle_id, child in _children_by_vehicle(recovered).items()
+    } == {
+        vehicle_id: str(child["agent_run"]["id"])
+        for vehicle_id, child in _children_by_vehicle(original).items()
+    }
+    assert _count_rows(purchase_harness, "purchase_runs") == 1
+    assert _count_rows(purchase_harness, "purchase_run_vehicles") == 3
+    assert _count_rows(purchase_harness, "agent_runs") == 3
+    assert _count_rows(purchase_harness, "proposed_actions") == 3
+    with purchase_harness.session_factory() as session:
+        event_counts = session.execute(
+            text(
+                "select count(*), "
+                "count(distinct run_id || ':' || semantic_key) "
+                "from agent_events"
+            )
+        ).one()
+    assert event_counts[0] > 0
+    assert event_counts[0] == event_counts[1]
+    assert _count_rows(purchase_harness, "approvals") == 0
+    assert _count_rows(purchase_harness, "outbound_deliveries") == 0
+    assert purchase_harness.messaging.calls == []
+
+
+@pytest.mark.parametrize(
+    ("goal", "vehicle_ids"),
+    [
+        (
+            f"{PURCHASE_GOAL} Prioritize the closest dealer.",
+            CANONICAL_VEHICLE_IDS,
+        ),
+        (
+            PURCHASE_GOAL,
+            ["baytown-blue", "houston-white"],
+        ),
+        (
+            PURCHASE_GOAL,
+            ["houston-white", "baytown-blue", "katy-blue"],
+        ),
+        (
+            PURCHASE_GOAL,
+            ["baytown-blue", "unknown-vehicle"],
+        ),
+    ],
+)
+def test_same_creation_identity_rejects_a_materially_different_intent(
+    purchase_harness: PurchaseHarness,
+    goal: str,
+    vehicle_ids: list[str],
+) -> None:
+    creation_id = str(uuid4())
+    with TestClient(app) as client:
+        original = _create_purchase(client, creation_id=creation_id)
+        conflict = client.post(
+            "/purchase-runs",
+            json={
+                "creation_id": creation_id,
+                "goal": goal,
+                "vehicle_ids": vehicle_ids,
+            },
+        )
+
+    assert conflict.status_code == 409, conflict.text
+    assert conflict.json()["detail"] == {
+        "code": "purchase_creation_conflict",
+        "message": (
+            "This creation identity is already bound to a different purchase intent."
+        ),
+    }
+    assert original["id"] == creation_id
+    assert _count_rows(purchase_harness, "purchase_runs") == 1
+    assert _count_rows(purchase_harness, "purchase_run_vehicles") == 3
+    assert _count_rows(purchase_harness, "agent_runs") == 3
+    assert _count_rows(purchase_harness, "proposed_actions") == 3
+    assert purchase_harness.messaging.calls == []
+
+
+def test_concurrent_same_identity_creation_converges_on_one_aggregate(
+    purchase_harness: PurchaseHarness,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    creation_id = str(uuid4())
+    simultaneous_repository_calls = Barrier(2)
+    original_create = PurchaseRunRepository.create
+
+    def create_simultaneously(
+        self: PurchaseRunRepository,
+        *args: object,
+        **kwargs: object,
+    ):
+        simultaneous_repository_calls.wait(timeout=10)
+        return original_create(self, *args, **kwargs)
+
+    monkeypatch.setattr(
+        PurchaseRunRepository,
+        "create",
+        create_simultaneously,
+    )
+
+    def create() -> tuple[int, dict[str, object]]:
+        with TestClient(app) as client:
+            response = client.post(
+                "/purchase-runs",
+                json={
+                    "creation_id": creation_id,
+                    "goal": PURCHASE_GOAL,
+                    "vehicle_ids": CANONICAL_VEHICLE_IDS,
+                },
+            )
+        return response.status_code, response.json()
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        outcomes = list(executor.map(lambda _: create(), range(2)))
+
+    assert [status_code for status_code, _ in outcomes] == [201, 201]
+    assert {str(workspace["id"]) for _, workspace in outcomes} == {creation_id}
+    with TestClient(app) as client:
+        final_response = client.get(f"/purchase-runs/{creation_id}")
+    assert final_response.status_code == 200, final_response.text
+    final = final_response.json()
+    assert final["setup_status"] == "READY"
+    assert final["counts"]["linked_children"] == 3
+    assert _count_rows(purchase_harness, "purchase_runs") == 1
+    assert _count_rows(purchase_harness, "purchase_run_vehicles") == 3
+    assert _count_rows(purchase_harness, "agent_runs") == 3
+    assert _count_rows(purchase_harness, "proposed_actions") == 3
+    with purchase_harness.session_factory() as session:
+        event_counts = session.execute(
+            text(
+                "select count(*), "
+                "count(distinct run_id || ':' || semantic_key) "
+                "from agent_events"
+            )
+        ).one()
+    assert event_counts[0] > 0
+    assert event_counts[0] == event_counts[1]
+    assert _count_rows(purchase_harness, "approvals") == 0
+    assert _count_rows(purchase_harness, "outbound_deliveries") == 0
     assert purchase_harness.messaging.calls == []
 
 
@@ -594,6 +802,61 @@ def test_partial_creation_remains_inspectable_and_recovery_creates_only_missing_
     assert purchase_harness.messaging.calls == []
 
 
+def test_same_identity_retry_recovers_only_a_missing_child(
+    purchase_harness: PurchaseHarness,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    creation_id = str(uuid4())
+    original_create = AgentWorkflowService.create
+    create_calls: list[str] = []
+    fail_katy = True
+
+    async def fail_one_child(
+        self: AgentWorkflowService,
+        vehicle_id: str,
+        *args: object,
+        **kwargs: object,
+    ):
+        nonlocal fail_katy
+        create_calls.append(vehicle_id)
+        if vehicle_id == "katy-blue" and fail_katy:
+            fail_katy = False
+            raise RuntimeError("injected child creation failure")
+        return await original_create(self, vehicle_id, *args, **kwargs)
+
+    monkeypatch.setattr(AgentWorkflowService, "create", fail_one_child)
+
+    with TestClient(app) as client:
+        partial = _create_purchase(client, creation_id=creation_id)
+        stable_children = _children_by_vehicle(partial)
+        stable_ids = {
+            vehicle_id: str(stable_children[vehicle_id]["agent_run"]["id"])
+            for vehicle_id in ["baytown-blue", "houston-white"]
+        }
+        retried = _create_purchase(client, creation_id=creation_id)
+
+    assert partial["id"] == retried["id"] == creation_id
+    assert partial["setup_status"] == "RECOVERY_REQUIRED"
+    assert retried["setup_status"] == "READY"
+    retried_children = _children_by_vehicle(retried)
+    assert {
+        vehicle_id: str(retried_children[vehicle_id]["agent_run"]["id"])
+        for vehicle_id in stable_ids
+    } == stable_ids
+    assert Counter(create_calls) == Counter(
+        {
+            "baytown-blue": 1,
+            "houston-white": 1,
+            "katy-blue": 2,
+        }
+    )
+    assert _count_rows(purchase_harness, "purchase_runs") == 1
+    assert _count_rows(purchase_harness, "purchase_run_vehicles") == 3
+    assert _count_rows(purchase_harness, "agent_runs") == 3
+    assert _count_rows(purchase_harness, "proposed_actions") == 3
+    assert purchase_harness.messaging.calls == []
+
+
 def test_recoverable_committed_child_run_is_adopted_and_never_recreated(
     purchase_harness: PurchaseHarness,
     monkeypatch: pytest.MonkeyPatch,
@@ -689,6 +952,60 @@ def test_recovery_reuses_reserved_identity_after_child_commit_before_link(
     assert _count_rows(purchase_harness, "agent_runs") == 3
     assert _count_rows(purchase_harness, "proposed_actions") == 3
     assert _count_rows(purchase_harness, "purchase_run_vehicles") == 3
+    with purchase_harness.session_factory() as session:
+        katy_event_counts = session.execute(
+            text(
+                "select count(*), count(distinct semantic_key) "
+                "from agent_events where run_id = :run_id"
+            ),
+            {"run_id": committed_katy_id},
+        ).one()
+    assert tuple(katy_event_counts) == (3, 3)
+    assert purchase_harness.messaging.calls == []
+
+
+def test_same_identity_retry_adopts_a_committed_child_after_result_loss(
+    purchase_harness: PurchaseHarness,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    creation_id = str(uuid4())
+    original_create = AgentWorkflowService.create
+    committed_katy_id: str | None = None
+    lose_katy_result = True
+
+    async def lose_result_after_commit(
+        self: AgentWorkflowService,
+        vehicle_id: str,
+        *args: object,
+        **kwargs: object,
+    ):
+        nonlocal committed_katy_id, lose_katy_result
+        run = await original_create(self, vehicle_id, *args, **kwargs)
+        if vehicle_id == "katy-blue" and lose_katy_result:
+            lose_katy_result = False
+            committed_katy_id = run.id
+            raise RuntimeError("injected result loss before purchase link")
+        return run
+
+    monkeypatch.setattr(AgentWorkflowService, "create", lose_result_after_commit)
+
+    with TestClient(app) as client:
+        partial = _create_purchase(client, creation_id=creation_id)
+        assert partial["setup_status"] == "RECOVERY_REQUIRED"
+        assert _children_by_vehicle(partial)["katy-blue"]["agent_run"] is None
+        retried = _create_purchase(client, creation_id=creation_id)
+
+    assert retried["id"] == creation_id
+    assert retried["setup_status"] == "READY"
+    assert committed_katy_id is not None
+    assert (
+        _children_by_vehicle(retried)["katy-blue"]["agent_run"]["id"]
+        == committed_katy_id
+    )
+    assert _count_rows(purchase_harness, "purchase_runs") == 1
+    assert _count_rows(purchase_harness, "purchase_run_vehicles") == 3
+    assert _count_rows(purchase_harness, "agent_runs") == 3
+    assert _count_rows(purchase_harness, "proposed_actions") == 3
     with purchase_harness.session_factory() as session:
         katy_event_counts = session.execute(
             text(

@@ -7,6 +7,8 @@ import { App } from "./App";
 const apiBaseUrl = "http://localhost:8000";
 const purchaseId = "purchase-1";
 const exampleGoal = "Find a new 2025 or 2026 Hyundai Tucson Hybrid Limited within 40 miles of Houston under $40,000. I prefer blue and require AWD.";
+const firstCreationId = "11111111-1111-4111-8111-111111111111";
+const secondCreationId = "22222222-2222-4222-8222-222222222222";
 
 const candidates = [
   {
@@ -187,6 +189,7 @@ afterEach(() => {
 
 describe("durable purchase workspace routing", () => {
   it("selects candidates and creates exactly one durable purchase without browser-created child runs", async () => {
+    vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue(firstCreationId);
     const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
       if (input === `${apiBaseUrl}/quotes/fixtures` && init?.method === undefined) {
         return jsonResponse([]);
@@ -223,11 +226,214 @@ describe("durable purchase workspace routing", () => {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
+        creation_id: firstCreationId,
         goal: exampleGoal,
         vehicle_ids: ["baytown-blue", "houston-white", "katy-blue"],
       }),
     });
     expect(callsTo(fetchMock, `${apiBaseUrl}/agent-runs`, "POST")).toHaveLength(0);
+  });
+
+  it("retries an ambiguous create with the same logical creation identity", async () => {
+    const randomUuid = vi.spyOn(globalThis.crypto, "randomUUID")
+      .mockReturnValueOnce(firstCreationId)
+      .mockReturnValueOnce(secondCreationId);
+    let createCalls = 0;
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      if (input === `${apiBaseUrl}/quotes/fixtures` && init?.method === undefined) {
+        return jsonResponse([]);
+      }
+      if (input === `${apiBaseUrl}/candidates/search` && init?.method === "POST") {
+        return jsonResponse(searchResult);
+      }
+      if (input === `${apiBaseUrl}/purchase-runs` && init?.method === "POST") {
+        createCalls += 1;
+        if (createCalls === 1) {
+          throw new TypeError("The create response was lost");
+        }
+        return jsonResponse(purchaseWorkspace, 201);
+      }
+      if (input === `${apiBaseUrl}/purchase-runs/${purchaseId}` && init?.method === undefined) {
+        return jsonResponse(purchaseWorkspace);
+      }
+      throw new Error(`Unexpected request: ${String(input)}`);
+    });
+    renderApp();
+
+    fireEvent.click(screen.getByRole("button", { name: "Search inventory" }));
+    expect(await screen.findByText("3 qualified candidates")).toBeVisible();
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Baytown Hyundai" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Houston Hyundai" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Katy Hyundai" }));
+    fireEvent.click(screen.getByRole("button", { name: "Start buying agent" }));
+
+    expect(await screen.findByRole("button", { name: "Retry buying agent" })).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "Retry buying agent" }));
+
+    expect(await screen.findByRole("heading", { name: "Buying agent" })).toBeVisible();
+    expect(window.location.search).toBe(`?purchase=${purchaseId}`);
+    const createRequests = callsTo(fetchMock, `${apiBaseUrl}/purchase-runs`, "POST");
+    expect(createRequests).toHaveLength(2);
+    const payloads = createRequests.map(([, init]) => JSON.parse(String(init?.body)) as {
+      creation_id: string;
+      goal: string;
+      vehicle_ids: string[];
+    });
+    expect(payloads[0]).toEqual(payloads[1]);
+    expect(payloads[0]?.creation_id).toBe(firstCreationId);
+    expect(randomUuid).toHaveBeenCalledTimes(1);
+    expect(callsTo(fetchMock, `${apiBaseUrl}/agent-runs`, "POST")).toHaveLength(0);
+  });
+
+  it("uses a new creation identity when a failed attempt changes vehicle selection", async () => {
+    const randomUuid = vi.spyOn(globalThis.crypto, "randomUUID")
+      .mockReturnValueOnce(firstCreationId)
+      .mockReturnValueOnce(secondCreationId);
+    let createCalls = 0;
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      if (input === `${apiBaseUrl}/quotes/fixtures` && init?.method === undefined) {
+        return jsonResponse([]);
+      }
+      if (input === `${apiBaseUrl}/candidates/search` && init?.method === "POST") {
+        return jsonResponse(searchResult);
+      }
+      if (input === `${apiBaseUrl}/purchase-runs` && init?.method === "POST") {
+        createCalls += 1;
+        if (createCalls === 1) {
+          throw new TypeError("The create response was lost");
+        }
+        return jsonResponse(purchaseWorkspace, 201);
+      }
+      if (input === `${apiBaseUrl}/purchase-runs/${purchaseId}` && init?.method === undefined) {
+        return jsonResponse(purchaseWorkspace);
+      }
+      throw new Error(`Unexpected request: ${String(input)}`);
+    });
+    renderApp();
+
+    fireEvent.click(screen.getByRole("button", { name: "Search inventory" }));
+    expect(await screen.findByText("3 qualified candidates")).toBeVisible();
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Baytown Hyundai" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Houston Hyundai" }));
+    fireEvent.click(screen.getByRole("button", { name: "Start buying agent" }));
+    expect(await screen.findByRole("button", { name: "Retry buying agent" })).toBeEnabled();
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Katy Hyundai" }));
+    expect(screen.getByRole("button", { name: "Start buying agent" })).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "Start buying agent" }));
+
+    expect(await screen.findByRole("heading", { name: "Buying agent" })).toBeVisible();
+    const createRequests = callsTo(fetchMock, `${apiBaseUrl}/purchase-runs`, "POST");
+    const payloads = createRequests.map(([, init]) => JSON.parse(String(init?.body)) as {
+      creation_id: string;
+      vehicle_ids: string[];
+    });
+    expect(payloads).toEqual([
+      {
+        creation_id: firstCreationId,
+        goal: exampleGoal,
+        vehicle_ids: ["baytown-blue", "houston-white"],
+      },
+      {
+        creation_id: secondCreationId,
+        goal: exampleGoal,
+        vehicle_ids: ["baytown-blue", "houston-white", "katy-blue"],
+      },
+    ]);
+    expect(randomUuid).toHaveBeenCalledTimes(2);
+  });
+
+  it("normalizes only outer goal whitespace when matching an ambiguous retry", async () => {
+    const randomUuid = vi.spyOn(globalThis.crypto, "randomUUID")
+      .mockReturnValueOnce(firstCreationId)
+      .mockReturnValueOnce(secondCreationId);
+    let createCalls = 0;
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      if (input === `${apiBaseUrl}/quotes/fixtures` && init?.method === undefined) {
+        return jsonResponse([]);
+      }
+      if (input === `${apiBaseUrl}/candidates/search` && init?.method === "POST") {
+        return jsonResponse(searchResult);
+      }
+      if (input === `${apiBaseUrl}/purchase-runs` && init?.method === "POST") {
+        createCalls += 1;
+        if (createCalls === 1) throw new TypeError("The create response was lost");
+        return jsonResponse(purchaseWorkspace, 201);
+      }
+      if (input === `${apiBaseUrl}/purchase-runs/${purchaseId}` && init?.method === undefined) {
+        return jsonResponse(purchaseWorkspace);
+      }
+      throw new Error(`Unexpected request: ${String(input)}`);
+    });
+    renderApp();
+
+    fireEvent.click(screen.getByRole("button", { name: "Search inventory" }));
+    expect(await screen.findByText("3 qualified candidates")).toBeVisible();
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Baytown Hyundai" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Houston Hyundai" }));
+    fireEvent.click(screen.getByRole("button", { name: "Start buying agent" }));
+    expect(await screen.findByRole("button", { name: "Retry buying agent" })).toBeEnabled();
+
+    fireEvent.change(screen.getByLabelText("Purchase goal"), {
+      target: { value: `  ${exampleGoal}  ` },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Retry buying agent" }));
+
+    expect(await screen.findByRole("heading", { name: "Buying agent" })).toBeVisible();
+    const payloads = callsTo(fetchMock, `${apiBaseUrl}/purchase-runs`, "POST")
+      .map(([, init]) => JSON.parse(String(init?.body)) as { creation_id: string; goal: string });
+    expect(payloads).toHaveLength(2);
+    expect(payloads[0]?.creation_id).toBe(firstCreationId);
+    expect(payloads[1]?.creation_id).toBe(firstCreationId);
+    expect(payloads[1]?.goal).toBe(exampleGoal);
+    expect(randomUuid).toHaveBeenCalledTimes(1);
+  });
+
+  it("uses a new creation identity when a failed attempt changes the material goal", async () => {
+    const changedGoal = `${exampleGoal} I also require a gray interior.`;
+    const randomUuid = vi.spyOn(globalThis.crypto, "randomUUID")
+      .mockReturnValueOnce(firstCreationId)
+      .mockReturnValueOnce(secondCreationId);
+    let createCalls = 0;
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      if (input === `${apiBaseUrl}/quotes/fixtures` && init?.method === undefined) {
+        return jsonResponse([]);
+      }
+      if (input === `${apiBaseUrl}/candidates/search` && init?.method === "POST") {
+        return jsonResponse(searchResult);
+      }
+      if (input === `${apiBaseUrl}/purchase-runs` && init?.method === "POST") {
+        createCalls += 1;
+        if (createCalls === 1) throw new TypeError("The create response was lost");
+        return jsonResponse({ ...purchaseWorkspace, goal: changedGoal }, 201);
+      }
+      if (input === `${apiBaseUrl}/purchase-runs/${purchaseId}` && init?.method === undefined) {
+        return jsonResponse({ ...purchaseWorkspace, goal: changedGoal });
+      }
+      throw new Error(`Unexpected request: ${String(input)}`);
+    });
+    renderApp();
+
+    fireEvent.click(screen.getByRole("button", { name: "Search inventory" }));
+    expect(await screen.findByText("3 qualified candidates")).toBeVisible();
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Baytown Hyundai" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Houston Hyundai" }));
+    fireEvent.click(screen.getByRole("button", { name: "Start buying agent" }));
+    expect(await screen.findByRole("button", { name: "Retry buying agent" })).toBeEnabled();
+
+    fireEvent.change(screen.getByLabelText("Purchase goal"), { target: { value: changedGoal } });
+    expect(screen.getByRole("button", { name: "Start buying agent" })).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "Start buying agent" }));
+
+    expect(await screen.findByRole("heading", { name: "Buying agent" })).toBeVisible();
+    const payloads = callsTo(fetchMock, `${apiBaseUrl}/purchase-runs`, "POST")
+      .map(([, init]) => JSON.parse(String(init?.body)) as { creation_id: string; goal: string });
+    expect(payloads.map(({ creation_id: creationId }) => creationId)).toEqual([
+      firstCreationId,
+      secondCreationId,
+    ]);
+    expect(payloads[1]?.goal).toBe(changedGoal);
+    expect(randomUuid).toHaveBeenCalledTimes(2);
   });
 
   it("reloads a purchase directly from its durable URL without search or browser run grouping", async () => {

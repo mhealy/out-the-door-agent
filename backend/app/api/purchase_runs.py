@@ -1,4 +1,5 @@
 from typing import Annotated
+from uuid import UUID
 
 from fastapi import APIRouter, Body, Depends, HTTPException, status
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -16,7 +17,10 @@ from app.dependencies import (
 )
 from app.domain.purchase import PurchaseWorkspace
 from app.persistence.db import get_session
-from app.persistence.purchases import PurchaseRunNotFoundError
+from app.persistence.purchases import (
+    PurchaseCreationConflictError,
+    PurchaseRunNotFoundError,
+)
 from app.providers.dealer_contacts import DealerContactResolver
 from app.providers.dealer_messages import DealerMessageProvider
 from app.providers.followup_drafting import FollowupDrafter
@@ -37,6 +41,7 @@ router = APIRouter(prefix="/purchase-runs", tags=["purchase-runs"])
 class CreatePurchaseRunRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    creation_id: UUID
     goal: str = Field(min_length=1)
     vehicle_ids: list[str] = Field(min_length=2, max_length=5)
 
@@ -146,9 +151,21 @@ async def create_purchase_run(
     )
     try:
         return await service.create(
+            creation_id=str(request.creation_id),
             goal=request.goal,
             vehicle_ids=request.vehicle_ids,
         )
+    except PurchaseCreationConflictError as error:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "purchase_creation_conflict",
+                "message": (
+                    "This creation identity is already bound to a different "
+                    "purchase intent."
+                ),
+            },
+        ) from error
     except CandidateNotFoundError as error:
         raise _candidate_not_found(error) from error
     except InvalidPurchaseSelectionError as error:

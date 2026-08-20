@@ -1,0 +1,44 @@
+[
+  {
+    "canonical_name": "Ceramic Shield",
+    "sources": [
+      {
+        "id": "ceramic-shield-vendor-overview",
+        "url": "https://geoshieldusa.com/collections/protection-film-products/products/ceramic-shield",
+        "title": "Ceramic Shield PPF - Gloss Clear",
+        "publisher": "Geoshield USA",
+        "retrieved_at": "2026-08-20T04:05:00Z",
+        "excerpt": "Ceramic Shield Gloss Clear is Geoshield's flagship protective film, engineered with a 6.5-mil TPU core and ceramic-infused layers."
+      },
+      {
+        "id": "ceramic-coating-independent-context",
+        "url": "https://www.ace.aaa.com/publications/auto/drive-smart/car-finish-protection.html",
+        "title": "How to Protect Your Car's Finish",
+        "publisher": "AAA automotive guidance",
+        "retrieved_at": "2026-08-20T04:07:00Z",
+        "excerpt": "Ceramic coatings with silicon dioxide produce high gloss and water beading and cling tenaciously to the clear coat."
+      }
+    ]
+  },
+  {
+    "canonical_name": "SecureTrack theft recovery",
+    "sources": [
+      {
+        "id": "securetrack-vendor-overview",
+        "url": "https://conneqtech.com/en/solutions/securetrack/vehicle-tracking-system-for-car-owners/",
+        "title": "SecureTrack for car owners",
+        "publisher": "Conneqtech",
+        "retrieved_at": "2026-08-20T04:10:00Z",
+        "excerpt": "The vendor describes real-time GPS tracking through its SecureTrack app and 24/7 monitoring with action after theft or sabotage."
+      },
+      {
+        "id": "theft-recovery-independent-context",
+        "url": "https://www.nhtsa.gov/vehicle-safety/vehicle-theft-prevention",
+        "title": "Vehicle Theft Prevention",
+        "publisher": "National Highway Traffic Safety Administration",
+        "retrieved_at": "2026-08-20T04:12:00Z",
+        "excerpt": "Vehicle recovery systems use electronic transmission technology to help law enforcement reveal the location of stolen vehicles."
+      }
+    ]
+  }
+]

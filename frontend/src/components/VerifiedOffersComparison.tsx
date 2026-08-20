@@ -285,7 +285,7 @@ function ResearchSourceDrawer({
   >
     <div className="panel-heading">
       <div>
-        <p className="eyebrow">Independent research source</p>
+        <p className="eyebrow provenance-label">INDEPENDENT RESEARCH</p>
         <h3 id={headingId}>{source.title}</h3>
       </div>
       <button
@@ -411,7 +411,7 @@ function AddonResearch({
     className="addon-research"
   >
     <div className="addon-research-heading">
-      <strong>Independent research</strong>
+      <strong className="provenance-label">INDEPENDENT RESEARCH</strong>
       <span className={`research-support research-support-${finding.support_status.toLowerCase()}`}>
         {formatIdentifier(finding.support_status)}
       </span>
@@ -459,9 +459,10 @@ function AdvertisedPrice({ offer }: { offer: ComparedOffer }) {
     {provenance
       ? <a
         aria-label={`${offer.dealer_name} inventory listing`}
+        className="inventory-source-link"
         href={provenance.source_url}
       >
-        Inventory listing · {provenance.source_provider}
+        INVENTORY SOURCE · {provenance.source_provider}
       </a>
       : <span className="muted">Inventory source unavailable</span>}
   </div>;
@@ -477,7 +478,7 @@ function WrittenOtd({
   return <div className="comparison-money-cell">
     <strong>{formatMoney(offer.claimed_otd)}</strong>
     {offer.claimed_otd !== null && <span className="comparison-source-label">
-      Dealer response
+      DEALER EVIDENCE
     </span>}
     {offer.claimed_otd_evidence_ids.map((evidenceId, index) => <EvidenceButton
       evidence={evidenceFor(offer, evidenceId)}
@@ -530,7 +531,7 @@ function OfferTerms({
         key={`${offer.agent_run_id}:${addon.evidence_id}:${addon.name}`}
       >
         <span><strong>{addon.name}</strong> · {formatMoney(addon.amount)}</span>
-        <span className="comparison-source-label">Dealer says mandatory</span>
+        <span className="comparison-source-label">DEALER EVIDENCE · stated mandatory</span>
         <EvidenceButton
           evidence={evidenceFor(offer, addon.evidence_id)}
           label={`View ${addon.name} evidence`}

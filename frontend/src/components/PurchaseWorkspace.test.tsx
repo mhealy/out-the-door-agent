@@ -495,6 +495,34 @@ const responseBNoAddonsComparison = {
 };
 
 const researchTargetsUrl = `${apiBaseUrl}/purchase-runs/${purchaseId}/research-targets`;
+const purchaseActivityUrl = `${apiBaseUrl}/purchase-runs/${purchaseId}/activity`;
+
+const canonicalActivity = [
+  {
+    event_id: "event-katy-followup",
+    agent_run_id: "run-katy",
+    vehicle_id: katy.id,
+    event_type: "FOLLOWUP_PREPARED",
+    message: "Dealer follow-up prepared for review.",
+    occurred_at: "2026-08-19T20:15:00Z",
+  },
+  {
+    event_id: "event-b-houston-analysis",
+    agent_run_id: "run-houston",
+    vehicle_id: houston.id,
+    event_type: "RESPONSE_ANALYZED",
+    message: "Dealer response analyzed against deterministic quote policy.",
+    occurred_at: "2026-08-19T20:14:00Z",
+  },
+  {
+    event_id: "event-a-baytown-verified",
+    agent_run_id: "run-baytown",
+    vehicle_id: baytown.id,
+    event_type: "INTERACTION_COMPLETE",
+    message: "The dealer offer is comparable.",
+    occurred_at: "2026-08-19T20:14:00Z",
+  },
+];
 
 function investigateUrl(targetId: string) {
   return `${researchTargetsUrl}/${encodeURIComponent(targetId)}/investigate`;
@@ -719,6 +747,139 @@ function renderWorkspace(queryClient = new QueryClient({
 afterEach(() => vi.restoreAllMocks());
 
 describe("PurchaseWorkspace", () => {
+  it("puts the decision story first and renders one compact cross-dealer activity timeline", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      if (input === `${apiBaseUrl}/purchase-runs/${purchaseId}` && init?.method === undefined) {
+        return jsonResponse(canonicalWorkspace());
+      }
+      if (input === purchaseActivityUrl && init?.method === undefined) {
+        return jsonResponse(canonicalActivity);
+      }
+      if (input === researchTargetsUrl && init?.method === undefined) {
+        return jsonResponse([]);
+      }
+      throw new Error(`Unexpected request: ${String(input)}`);
+    });
+
+    renderWorkspace();
+
+    const summary = await screen.findByRole("region", {
+      name: "Purchase decision summary",
+    });
+    expect(within(summary).getByText("3 dealers selected")).toBeVisible();
+    expect(within(summary).getByText("2 verified offers")).toBeVisible();
+    expect(within(summary).getByText("1 incomplete offer")).toBeVisible();
+    expect(within(summary).getByText("1 buyer action")).toBeVisible();
+    expect(within(summary).getByText("Katy follow-up is awaiting approval."))
+      .toBeVisible();
+    expect(within(summary).getByText("Baytown Hyundai")).toBeVisible();
+    expect(within(summary).getByText("$40,315.00")).toBeVisible();
+    expect(within(summary).getByText("BEST VERIFIED OFFER SO FAR")).toBeVisible();
+
+    const comparison = await screen.findByRole("region", { name: "Verified offers" });
+    expect(summary.compareDocumentPosition(comparison) & Node.DOCUMENT_POSITION_FOLLOWING)
+      .toBeTruthy();
+
+    const activity = await screen.findByRole("region", { name: "Purchase activity" });
+    const items = within(activity).getAllByRole("listitem");
+    expect(items).toHaveLength(3);
+    expect(items[0]).toHaveTextContent("Baytown Hyundai");
+    expect(items[0]).toHaveTextContent("Offer verified");
+    expect(items[1]).toHaveTextContent("Houston Hyundai");
+    expect(items[1]).toHaveTextContent("Dealer response analyzed");
+    expect(items[2]).toHaveTextContent("Katy Hyundai");
+    expect(items[2]).toHaveTextContent("Clarification prepared");
+    expect(within(activity).getAllByRole("time").map((item) => item.getAttribute("datetime")))
+      .toEqual([
+        "2026-08-19T20:14:00Z",
+        "2026-08-19T20:14:00Z",
+        "2026-08-19T20:15:00Z",
+      ]);
+    expect(activity).not.toHaveTextContent("event-a-baytown-verified");
+    expect(activity).not.toHaveTextContent("run-baytown");
+    expect(activity).not.toHaveTextContent("baytown-blue");
+    expect(callsTo(fetchMock, purchaseActivityUrl)).toHaveLength(1);
+  });
+
+  it("bounds a long activity timeline until the reviewer asks to show every event", async () => {
+    const longActivity = Array.from({ length: 12 }, (_, index) => ({
+      ...canonicalActivity[0],
+      event_id: `event-${String(index + 1).padStart(2, "0")}`,
+      message: `Activity message ${index + 1}.`,
+      occurred_at: new Date(Date.UTC(2026, 7, 19, 20, 0, index)).toISOString(),
+    }));
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      if (input === `${apiBaseUrl}/purchase-runs/${purchaseId}` && init?.method === undefined) {
+        return jsonResponse(canonicalWorkspace());
+      }
+      if (input === purchaseActivityUrl && init?.method === undefined) {
+        return jsonResponse(longActivity);
+      }
+      if (input === researchTargetsUrl && init?.method === undefined) {
+        return jsonResponse([]);
+      }
+      throw new Error(`Unexpected request: ${String(input)}`);
+    });
+
+    renderWorkspace();
+
+    const activity = await screen.findByRole("region", { name: "Purchase activity" });
+    expect(await within(activity).findAllByRole("listitem")).toHaveLength(8);
+    expect(within(activity).queryByText("Activity message 1.")).not.toBeInTheDocument();
+    expect(within(activity).getByText("Activity message 12.")).toBeVisible();
+    fireEvent.click(within(activity).getByRole("button", { name: "Show all 12 events" }));
+    expect(within(activity).getAllByRole("listitem")).toHaveLength(12);
+    expect(within(activity).getByText("Activity message 1.")).toBeVisible();
+    expect(within(activity).getByRole("button", { name: "Show recent 8 events" }))
+      .toBeVisible();
+  });
+
+  it("announces an unavailable activity projection without hiding current decisions", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      if (input === `${apiBaseUrl}/purchase-runs/${purchaseId}` && init?.method === undefined) {
+        return jsonResponse(canonicalWorkspace());
+      }
+      if (input === purchaseActivityUrl && init?.method === undefined) {
+        return jsonResponse({ detail: "temporarily unavailable" }, 503);
+      }
+      if (input === researchTargetsUrl && init?.method === undefined) {
+        return jsonResponse([]);
+      }
+      throw new Error(`Unexpected request: ${String(input)}`);
+    });
+
+    renderWorkspace();
+
+    expect(await screen.findByRole("status", {
+      name: "Purchase activity unavailable",
+    })).toHaveTextContent(
+      "Purchase activity is temporarily unavailable. Current decision data remains visible.",
+    );
+    expect(screen.getByRole("region", { name: "Purchase decision summary" })).toBeVisible();
+  });
+
+  it("shows a truthful empty activity state", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      if (input === `${apiBaseUrl}/purchase-runs/${purchaseId}` && init?.method === undefined) {
+        return jsonResponse(canonicalWorkspace());
+      }
+      if (input === purchaseActivityUrl && init?.method === undefined) {
+        return jsonResponse([]);
+      }
+      if (input === researchTargetsUrl && init?.method === undefined) {
+        return jsonResponse([]);
+      }
+      throw new Error(`Unexpected request: ${String(input)}`);
+    });
+
+    renderWorkspace();
+
+    const activity = await screen.findByRole("region", { name: "Purchase activity" });
+    expect(await within(activity).findByText("No dealer workflow activity has been recorded yet."))
+      .toBeVisible();
+    expect(within(activity).queryByRole("list")).not.toBeInTheDocument();
+  });
+
   it("hydrates an existing child approval flow and reloads the parent after the exact child resumes", async () => {
     const refreshed = workspace({
       children: [
@@ -950,7 +1111,7 @@ describe("PurchaseWorkspace", () => {
 
     expect(await screen.findByRole("heading", { name: "Verified offers" })).toBeVisible();
     expect(screen.getByText("2 verified offers")).toBeVisible();
-    expect(screen.getByText("1 incomplete")).toBeVisible();
+    expect(screen.getByText("1 incomplete offer")).toBeVisible();
     expect(screen.getByText("Katy follow-up is awaiting approval.")).toBeVisible();
     expect(screen.getByRole("heading", { name: "Best verified offer so far" })).toBeVisible();
     expect(screen.getByText("$40,315.00 written OTD")).toBeVisible();
@@ -1156,7 +1317,7 @@ describe("PurchaseWorkspace", () => {
       name: "Independent research for Ceramic Shield",
     });
     expect(investigateSecureTrack).toBeDisabled();
-    expect(within(research).getByText("Independent research")).toBeVisible();
+    expect(within(research).getByText("INDEPENDENT RESEARCH")).toBeVisible();
     expect(within(research).getByText(ceramicFinding.summary)).toBeVisible();
     expect(within(research).getByText(ceramicFinding.limitations[0])).toBeVisible();
     expect(within(houstonRow).getByRole("button", {
@@ -1177,6 +1338,7 @@ describe("PurchaseWorkspace", () => {
     const sourceDrawer = await screen.findByRole("dialog", {
       name: ceramicVendorSource.title,
     });
+    expect(within(sourceDrawer).getByText("INDEPENDENT RESEARCH")).toBeVisible();
     expect(within(sourceDrawer).getByText(ceramicVendorSource.publisher)).toBeVisible();
     expect(within(sourceDrawer).getByText(ceramicVendorSource.excerpt)).toBeVisible();
     expect(within(sourceDrawer).getByRole("link", { name: "Open source page" }))
@@ -1187,6 +1349,7 @@ describe("PurchaseWorkspace", () => {
       name: "View Ceramic Shield evidence",
     }));
     const dealerEvidence = await screen.findByRole("dialog", { name: "addons" });
+    expect(within(dealerEvidence).getByText("DEALER EVIDENCE")).toBeVisible();
     expect(within(dealerEvidence).getByText("Ceramic Shield for $1,299 is mandatory."))
       .toBeVisible();
     expect(within(dealerEvidence).queryByText(ceramicVendorSource.publisher))
@@ -1410,6 +1573,18 @@ describe("PurchaseWorkspace", () => {
     });
     let purchaseReads = 0;
     let targetReads = 0;
+    let activityReads = 0;
+    const refreshedActivity = [
+      ...canonicalActivity,
+      {
+        event_id: "event-houston-complete",
+        agent_run_id: "run-houston",
+        vehicle_id: houston.id,
+        event_type: "INTERACTION_COMPLETE",
+        message: "Houston offer is now comparable.",
+        occurred_at: "2026-08-19T20:16:00Z",
+      },
+    ];
     const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
       if (input === `${apiBaseUrl}/purchase-runs/${purchaseId}` && init?.method === undefined) {
         purchaseReads += 1;
@@ -1421,6 +1596,10 @@ describe("PurchaseWorkspace", () => {
           targetReads === 1 ? [completedCeramicTarget] : [responseBCeramicTarget],
         );
       }
+      if (input === purchaseActivityUrl && init?.method === undefined) {
+        activityReads += 1;
+        return jsonResponse(activityReads === 1 ? canonicalActivity : refreshedActivity);
+      }
       if (input === `${apiBaseUrl}/agent-runs/run-houston/resume` && init?.method === "POST") {
         return jsonResponse(refreshedHoustonRun);
       }
@@ -1429,6 +1608,7 @@ describe("PurchaseWorkspace", () => {
     const { queryClient } = renderWorkspace();
 
     expect(await screen.findByText(ceramicFinding.summary)).toBeVisible();
+    expect(await screen.findByText("Dealer follow-up prepared for review.")).toBeVisible();
     const houstonWorkflow = screen.getByText("run-houston").closest("article");
     expect(houstonWorkflow).not.toBeNull();
     fireEvent.click(within(houstonWorkflow as HTMLElement).getByRole("button", {
@@ -1440,6 +1620,8 @@ describe("PurchaseWorkspace", () => {
       `${apiBaseUrl}/purchase-runs/${purchaseId}`,
     )).toHaveLength(2));
     await waitFor(() => expect(callsTo(fetchMock, researchTargetsUrl)).toHaveLength(2));
+    await waitFor(() => expect(callsTo(fetchMock, purchaseActivityUrl)).toHaveLength(2));
+    expect(await screen.findByText("Houston offer is now comparable.")).toBeVisible();
     await waitFor(() => expect(screen.queryByText(ceramicFinding.summary))
       .not.toBeInTheDocument());
     expect(await screen.findByRole("button", { name: "Investigate Ceramic Shield" }))

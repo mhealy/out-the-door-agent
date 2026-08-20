@@ -3,8 +3,10 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
+  EvidenceDrawer,
   QuoteAnalysisResultView,
   QuoteAnalysisWorkspace,
+  type Evidence,
   type QuoteAnalysisResponse,
 } from "./QuoteAnalysisWorkspace";
 
@@ -121,5 +123,23 @@ describe("QuoteAnalysisWorkspace", () => {
       .map((element) => element.id);
     expect(ids.length).toBeGreaterThan(0);
     expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it.each([
+    { sourceType: "OEM_SOURCE" as const, label: "OEM SOURCE" },
+    { sourceType: "WEB_SOURCE" as const, label: "WEB SOURCE" },
+  ])("labels $sourceType evidence without claiming independent research", ({
+    sourceType,
+    label,
+  }) => {
+    const evidence: Evidence = {
+      ...analysis.evidence[0],
+      source_type: sourceType,
+    };
+
+    render(<EvidenceDrawer evidence={evidence} onClose={() => undefined} />);
+
+    expect(screen.getByText(label)).toBeVisible();
+    expect(screen.queryByText("INDEPENDENT RESEARCH")).not.toBeInTheDocument();
   });
 });

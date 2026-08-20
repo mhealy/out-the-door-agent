@@ -20,6 +20,14 @@ export type Evidence = {
   created_at: string;
 };
 
+const evidenceSourceLabels: Record<Evidence["source_type"], string> = {
+  DEALER_EMAIL: "DEALER EVIDENCE",
+  DEALER_ATTACHMENT: "DEALER EVIDENCE",
+  LISTING: "INVENTORY SOURCE",
+  OEM_SOURCE: "OEM SOURCE",
+  WEB_SOURCE: "WEB SOURCE",
+};
+
 type MoneyItem = {
   name: string;
   amount: string | null;
@@ -573,7 +581,7 @@ export function EvidenceDrawer({ evidence, onClose }: { evidence: Evidence; onCl
   >
     <div className="panel-heading">
       <div>
-        <p className="eyebrow">Supporting evidence</p>
+        <p className="eyebrow provenance-label">{evidenceSourceLabels[evidence.source_type]}</p>
         <h3 id={headingId}>{evidence.field_name.replaceAll("_", " ")}</h3>
       </div>
       <button className="secondary-button" onClick={onClose} ref={closeButtonRef} type="button">Close</button>

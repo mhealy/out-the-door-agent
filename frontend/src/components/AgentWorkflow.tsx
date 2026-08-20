@@ -374,14 +374,21 @@ export function AgentWorkflow({
         key={`${run.initial_action_id}:${actionIdForReview}`}
         onAuthoritativeEvent={resume}
       />}
-      {presentation.resumable && <button
-        className="secondary-button"
-        disabled={resumeMutation.isPending}
-        onClick={() => void resume()}
-        type="button"
+      {presentation.resumable && <div
+        aria-label="Demo control"
+        className="demo-control"
+        role="group"
       >
-        {resumeMutation.isPending ? "Resuming…" : "Resume from latest state"}
-      </button>}
+        <span className="demo-control-label">DEMO CONTROL</span>
+        <button
+          className="secondary-button"
+          disabled={resumeMutation.isPending}
+          onClick={() => void resume()}
+          type="button"
+        >
+          {resumeMutation.isPending ? "Resuming…" : "Resume from latest state"}
+        </button>
+      </div>}
     </div>
 
     {mutationError && <p className="error" role="alert">{mutationError.message}</p>}

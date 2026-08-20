@@ -561,9 +561,12 @@ function ProposalDialog({
           <p className="item-detail">
             Delivery is confirmed. Release the application-owned fixture response when you are ready to continue this interaction.
           </p>
-          <button disabled={releaseInFlight} onClick={onRelease} type="button">
-            {releaseInFlight ? "Releasing…" : "Release dealer response"}
-          </button>
+          <div aria-label="Demo control" className="demo-control" role="group">
+            <span className="demo-control-label">DEMO CONTROL</span>
+            <button disabled={releaseInFlight} onClick={onRelease} type="button">
+              {releaseInFlight ? "Releasing…" : "Release dealer response"}
+            </button>
+          </div>
         </>}
 
         {latestMessage && <>

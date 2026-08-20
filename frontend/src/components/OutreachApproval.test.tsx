@@ -486,7 +486,10 @@ describe("OutreachApproval", () => {
     fireEvent.click(within(dialog).getByRole("button", { name: "Approve & send" }));
 
     expect(await within(dialog).findByText("Sent through the fixture provider")).toBeVisible();
-    fireEvent.click(within(dialog).getByRole("button", { name: "Release dealer response" }));
+    const demoControl = within(dialog).getByRole("group", { name: "Demo control" });
+    fireEvent.click(within(demoControl).getByRole("button", {
+      name: "Release dealer response",
+    }));
 
     expect(await within(dialog).findByText("Dealer response received")).toBeVisible();
     expect(within(dialog).getByText("Dealer response analyzed")).toBeVisible();

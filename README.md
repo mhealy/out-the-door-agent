@@ -264,15 +264,17 @@ python -m pytest -m eval tests/evals
 ```
 
 Missing consent, missing credentials, or provider failures are not reported as passes.
-The final suite contains 42 eval-marked items but only 36 primary-model cases: 15 quote
+The final suite contains 41 eval-marked items but only 36 primary-model cases: 15 quote
 extractions, 12 follow-up drafts, and 9 research syntheses. Research also makes nine
-same-model semantic-grader calls; six remaining items are deterministic or no-call
+same-model semantic-grader calls; five remaining items are deterministic or no-call
 checks. The once-only August 20, 2026 release-candidate run used `gpt-5.6`: research
 was 9/9, follow-up contract conformance was 12/13 with a safe paraphrase rejected by
 the exact-wording gate, and quote extraction was raw 14/15 because an equivalent
-vehicle-ambiguity phrase exposed an evaluator defect. The corrected matcher rescored
-that captured quote 15/15 without another model call. Future runs may vary; the raw
-output and full classification in `docs/EVALS.md` are authoritative.
+vehicle-ambiguity phrase exposed an evaluator defect. The precision-safe no-call
+matcher correctly classifies the captured response; the offline corrected
+interpretation of the 15-case quote segment is therefore 15/15. The hosted suite was
+not rerun. Future runs may vary; the raw output and full classification in
+`docs/EVALS.md` are authoritative.
 
 ## Design principles
 

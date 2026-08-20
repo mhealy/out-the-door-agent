@@ -41,20 +41,20 @@ grader. It is not reachable from the product runtime.
 
 ## Live suite shape
 
-Before this release audit, the suite contained 39 eval-marked pytest items. Three
-deterministic evaluator-integrity regressions added during the audit bring that count
-to 42. Only 36 are primary-model cases:
+Before this release audit, the suite contained 39 eval-marked pytest items. Two
+follow-up evaluator-integrity regressions added during the audit bring the final
+opt-in selection to 41. Six quote-matcher integrity cases now run in ordinary CI and
+are not eval-marked. Only 36 opt-in cases call the primary models:
 
 | Eval file | Eval-marked items | Primary-model cases | Other items | Nominal model calls without retries |
 |---|---:|---:|---|---:|
-| Quote extraction | 16 | 15 | Vehicle-selection matcher regression | 15 |
+| Quote extraction | 15 | 15 | None | 15 |
 | Follow-up drafting | 15 | 12 | One comparable/no-draft case and two evaluator-integrity regressions | 12 |
 | Research synthesis | 11 | 9 | Corpus-integrity and stale-target checks | 18: nine syntheses plus nine grader calls |
-| **Total** | **42** | **36** | **6 deterministic/no-primary-model items** | **45** |
+| **Total** | **41** | **36** | **5 deterministic/no-primary-model items** | **45** |
 
 An aggregate pytest count therefore does not represent independent live semantic
-judgments. The
-per-task dimensions and denominators below are the meaningful evidence.
+judgments. The per-task dimensions and denominators below are the meaningful evidence.
 
 ## Quote extraction
 
@@ -72,9 +72,10 @@ and evidence checks 185/186. Two cases treated government fees as mandatory with
 the dealer saying so, and one invented a question from an omitted “plus TTL” phrase.
 That exposed an ownership error in the interpretation contract: extraction reports
 what the dealer stated, while deterministic assessment owns missing-information
-policy. After that contract and its labels were corrected, the last separately
-recorded run was 15/15, with 105/105 scalar fields, 60/60 collection sets, 34/34
-conditions, 33/33 source-grounded uncertainty checks, and 188/188 evidence checks.
+policy. After that contract and its labels were corrected, the final pre-audit
+August 19 hosted run was 15/15, with 105/105 scalar fields, 60/60 collection sets,
+34/34 conditions, 33/33 source-grounded uncertainty checks, and 188/188 evidence
+checks.
 
 The uncertainty denominator changed from 34 to 33 because the unsupported
 omission-derived label was removed; it was not an extra model success. Evidence and
@@ -202,11 +203,15 @@ single-vehicle economics empty and correctly reported that distinct terms for tw
 vehicles made the applicable VIN, stock number, price, and OTD ambiguous until a
 vehicle was selected. The lexical evaluator recognized “which vehicle” but not the
 equivalent “vehicle ... selected” construction. This was classified as an **evaluator
-defect**, not a semantic behavior defect. A red/green no-call regression now
-normalizes vehicle-selection synonyms; applying that corrected matcher to the captured
-response gives 15/15 strict and uncertainty 34/34. No second model run was made. The
-uncertainty denominator rose from the prior 33 to 34 and evidence from 188 to 189
-because their precision sides include the number of items emitted in this sample.
+defect**, not a semantic behavior defect. The precision-safe matcher now requires
+vehicle-identity language, multiple-alternative language, and unresolved
+selection/identity ambiguity on both sides. Red/green no-call controls prove that the
+committed label and captured wording pass while unrelated vehicle questions and a
+selected-vehicle statement fail. The captured response is therefore correctly
+classified offline, making the corrected quote interpretation 15/15 strict and
+uncertainty 34/34. The hosted suite was not rerun. The uncertainty denominator rose
+from the prior 33 to 34 and evidence from 188 to 189 because their precision sides
+include the number of items emitted in this sample.
 
 The follow-up segment was **12/13 strict**: deterministically accepted or no-draft
 12/13, requirement identifiers 28/28, concepts 28/28, concision 12/12, safety 12/12,
@@ -226,7 +231,7 @@ same-model grader reported source support, scope, limitations, no-value, no-trus
 no-action 9/9, disagreement 4/4, and injection 1/1. Its lack of independence and the
 fixture-retrieval limitations still apply.
 
-The quote matcher regression added after classification is no-call item 42 in the
-final suite. It was run directly and passed. The call-bearing suite was intentionally
-not rerun: the raw failure, corrected offline interpretation, and remaining model
-variance are all preserved rather than sampled away.
+The six quote matcher integrity cases run in ordinary CI; only the 15 hosted quote
+cases retain the `eval` marker. The call-bearing suite was intentionally not rerun:
+the raw failure, corrected offline interpretation, and remaining model variance are
+all preserved rather than sampled away.

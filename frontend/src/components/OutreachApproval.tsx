@@ -394,6 +394,7 @@ function FollowupControls({
 function ProposalDialog({
   proposal,
   initialProposal,
+  authorizationEnabled,
   approvalBlocked,
   decisionInFlight,
   interaction,
@@ -409,6 +410,7 @@ function ProposalDialog({
 }: {
   proposal: OutreachProposal;
   initialProposal: OutreachProposal;
+  authorizationEnabled: boolean;
   approvalBlocked: boolean;
   decisionInFlight: "approve" | "reject" | null;
   interaction: OutreachInteraction | null;
@@ -483,7 +485,9 @@ function ProposalDialog({
     >
       <div className="outreach-dialog-heading">
         <div>
-          <p className="eyebrow">Human approval required</p>
+          <p className="eyebrow">
+            {authorizationEnabled ? "Human approval required" : "Dealer interaction"}
+          </p>
           <h2 id="outreach-review-heading">
             {isFollowup ? "Review dealer follow-up" : "Review dealer quote request"}
           </h2>
@@ -499,7 +503,11 @@ function ProposalDialog({
         </button>
       </div>
 
-      <p className="outreach-approval-note">Sending requires your explicit approval.</p>
+      <p className="outreach-approval-note">
+        {authorizationEnabled
+          ? "Sending requires your explicit approval."
+          : "This workflow action is read-only in the current phase."}
+      </p>
 
       <dl className="outreach-meta">
         <div><dt>Dealer</dt><dd>{proposal.vehicle.dealer_name}</dd></div>
@@ -587,7 +595,8 @@ function ProposalDialog({
               <QuoteAnalysisResultView analysis={interaction.analysis} />
               <FollowupControls
                 awaitingApproval={
-                  isFollowup
+                  authorizationEnabled
+                  && isFollowup
                   && proposal.status === "PENDING_APPROVAL"
                   && !followupApprovalBlocked
                 }
@@ -617,7 +626,7 @@ function ProposalDialog({
         </>}
       </section>}
 
-      {proposal.status === "PENDING_APPROVAL" && <div className="outreach-actions">
+      {authorizationEnabled && proposal.status === "PENDING_APPROVAL" && <div className="outreach-actions">
         <button
           className="secondary-button outreach-reject-button"
           disabled={isDeciding}
@@ -642,6 +651,7 @@ function ProposalDialog({
 
 export function OutreachApproval({
   apiBaseUrl,
+  authorizationEnabled = true,
   candidate,
   controlledButtonLabel,
   currentActionId,
@@ -649,6 +659,7 @@ export function OutreachApproval({
   onAuthoritativeEvent,
 }: {
   apiBaseUrl: string;
+  authorizationEnabled?: boolean;
   candidate: OutreachCandidate;
   controlledButtonLabel?: string;
   currentActionId?: string | null;
@@ -744,7 +755,7 @@ export function OutreachApproval({
   };
 
   const decide = async (decision: "approve" | "reject") => {
-    if (!initialProposal || !reviewProposal) return;
+    if (!authorizationEnabled || !initialProposal || !reviewProposal) return;
     const proposalBeingReviewed = reviewProposal;
     setDecisionInFlight(decision);
     setError(null);
@@ -859,6 +870,7 @@ export function OutreachApproval({
     </button>
     {error && !initialProposal && <p className="error" role="alert">{error}</p>}
     {initialProposal && reviewProposal && dialogOpen && <ProposalDialog
+      authorizationEnabled={authorizationEnabled}
       approvalBlocked={blockedApprovalActionId === reviewProposal.id}
       decisionInFlight={decisionInFlight}
       error={error}

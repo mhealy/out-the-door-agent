@@ -47,6 +47,14 @@ from app.services.outreach_interactions import (
 )
 
 
+class AgentRunAdvancementFailedError(RuntimeError):
+    """A durable run exists, but its create-time graph invocation failed."""
+
+    def __init__(self, run_id: str) -> None:
+        super().__init__(run_id)
+        self.run_id = run_id
+
+
 class AgentGraphContext:
     """Request-scoped application capabilities used by graph nodes."""
 
@@ -925,7 +933,10 @@ class AgentWorkflowService:
         if vehicle is None:
             raise CandidateNotFoundError(vehicle_id)
         run = AgentRunRepository(self._session).create(vehicle_id)
-        return await self._advance(run)
+        try:
+            return await self._advance(run)
+        except Exception as error:
+            raise AgentRunAdvancementFailedError(run.id) from error
 
     def get(self, run_id: str) -> AgentRun:
         return AgentRunRepository(self._session).get(run_id)

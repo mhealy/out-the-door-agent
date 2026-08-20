@@ -45,8 +45,14 @@ type AgentRun = {
   events: AgentEvent[];
 };
 
+type ApiErrorDetail = {
+  code?: string;
+  message?: string;
+  run_id?: string;
+};
+
 type ApiErrorPayload = {
-  detail?: string | { message?: string };
+  detail?: string | ApiErrorDetail;
 };
 
 type PhasePresentation = {
@@ -131,6 +137,24 @@ async function apiError(response: Response, fallback: string): Promise<Error> {
   return new Error(message ?? fallback);
 }
 
+class RecoverableAgentRunError extends Error {
+  readonly runId: string;
+
+  constructor(runId: string, message: string) {
+    super(message);
+    this.name = "RecoverableAgentRunError";
+    this.runId = runId;
+  }
+}
+
+async function inspectAgentRun(apiBaseUrl: string, runId: string): Promise<AgentRun> {
+  const response = await fetch(`${apiBaseUrl}/agent-runs/${runId}`);
+  if (!response.ok) {
+    throw await apiError(response, "The existing agent workflow could not be inspected.");
+  }
+  return response.json() as Promise<AgentRun>;
+}
+
 async function createAgentRun(apiBaseUrl: string, vehicleId: string): Promise<AgentRun> {
   const response = await fetch(`${apiBaseUrl}/agent-runs`, {
     method: "POST",
@@ -138,7 +162,25 @@ async function createAgentRun(apiBaseUrl: string, vehicleId: string): Promise<Ag
     body: JSON.stringify({ vehicle_id: vehicleId }),
   });
   if (!response.ok) {
-    throw await apiError(response, "The agent workflow could not be started.");
+    const payload = (await response.json().catch(() => null)) as ApiErrorPayload | null;
+    const detail = payload?.detail;
+    const structuredDetail = typeof detail === "object" ? detail : null;
+    const recoverableRunId = structuredDetail?.code === "agent_run_advancement_failed"
+      && typeof structuredDetail.run_id === "string"
+      ? structuredDetail.run_id.trim()
+      : "";
+    const message = typeof detail === "string"
+      ? detail
+      : structuredDetail?.message ?? "The agent workflow could not be started.";
+
+    if (recoverableRunId) {
+      try {
+        return await inspectAgentRun(apiBaseUrl, recoverableRunId);
+      } catch {
+        throw new RecoverableAgentRunError(recoverableRunId, message);
+      }
+    }
+    throw new Error(message);
   }
   return response.json() as Promise<AgentRun>;
 }
@@ -196,13 +238,33 @@ export function AgentWorkflow({
 }) {
   const headingId = useId();
   const [run, setRun] = useState<AgentRun | null>(null);
+  const [recoverableRunId, setRecoverableRunId] = useState<string | null>(null);
   const createMutation = useMutation({
     mutationFn: () => createAgentRun(apiBaseUrl, candidate.id),
-    onSuccess: setRun,
+    onError: (error) => {
+      if (error instanceof RecoverableAgentRunError) {
+        setRecoverableRunId(error.runId);
+      }
+    },
+    onSuccess: (createdRun) => {
+      setRecoverableRunId(null);
+      setRun(createdRun);
+    },
+    retry: false,
+  });
+  const recoverMutation = useMutation({
+    mutationFn: (runId: string) => inspectAgentRun(apiBaseUrl, runId),
+    onSuccess: (recoveredRun) => {
+      createMutation.reset();
+      setRecoverableRunId(null);
+      setRun(recoveredRun);
+    },
+    retry: false,
   });
   const resumeMutation = useMutation({
     mutationFn: (runId: string) => resumeAgentRun(apiBaseUrl, runId),
     onSuccess: setRun,
+    retry: false,
   });
 
   const resume = async () => {
@@ -210,20 +272,28 @@ export function AgentWorkflow({
     await resumeMutation.mutateAsync(run.run_id);
   };
 
-  const mutationError = createMutation.error ?? resumeMutation.error;
+  const mutationError = recoverMutation.error ?? createMutation.error ?? resumeMutation.error;
 
   if (!run) {
     return <section className="agent-workflow agent-workflow-empty" aria-labelledby={headingId}>
       <p className="eyebrow">Agent workflow</p>
       <h4 id={headingId}>Carry this dealer interaction forward</h4>
       <p>Prepare the next safe action, then pause for real approval and dealer-response events.</p>
-      <button
-        disabled={createMutation.isPending}
-        onClick={() => createMutation.mutate()}
-        type="button"
-      >
-        {createMutation.isPending ? "Starting…" : "Start agent workflow"}
-      </button>
+      {recoverableRunId
+        ? <button
+          disabled={recoverMutation.isPending}
+          onClick={() => recoverMutation.mutate(recoverableRunId)}
+          type="button"
+        >
+          {recoverMutation.isPending ? "Recovering…" : "Recover existing workflow"}
+        </button>
+        : <button
+          disabled={createMutation.isPending}
+          onClick={() => createMutation.mutate()}
+          type="button"
+        >
+          {createMutation.isPending ? "Starting…" : "Start agent workflow"}
+        </button>}
       {mutationError && <p className="error" role="alert">{mutationError.message}</p>}
     </section>;
   }
@@ -232,6 +302,12 @@ export function AgentWorkflow({
   const reviewLabel = run.phase === "WAITING_FOR_APPROVAL"
     ? "Review approval"
     : "View dealer interaction";
+  const authorizationEnabled = run.phase === "WAITING_FOR_APPROVAL";
+  const actionIdForReview = run.phase === "STARTING"
+    ? null
+    : authorizationEnabled || run.phase === "DELIVERY_UNCONFIRMED"
+      ? run.current_action_id
+      : run.initial_action_id;
 
   return <section className="agent-workflow" aria-labelledby={headingId}>
     <div className="agent-workflow-heading">
@@ -250,13 +326,14 @@ export function AgentWorkflow({
     <AgentActivity events={run.events} />
 
     <div className="agent-workflow-actions">
-      {run.current_action_id && <OutreachApproval
+      {actionIdForReview && <OutreachApproval
         apiBaseUrl={apiBaseUrl}
+        authorizationEnabled={authorizationEnabled}
         candidate={candidate}
         controlledButtonLabel={reviewLabel}
-        currentActionId={run.current_action_id}
+        currentActionId={actionIdForReview}
         initialActionId={run.initial_action_id}
-        key={`${run.initial_action_id}:${run.current_action_id}`}
+        key={`${run.initial_action_id}:${actionIdForReview}`}
         onAuthoritativeEvent={resume}
       />}
       {presentation.resumable && <button

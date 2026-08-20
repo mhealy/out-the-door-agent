@@ -99,6 +99,23 @@ const pendingFollowup: OutreachProposal = {
   requested_information_labels: ["Written out-the-door total"],
 };
 
+const approvedUnconfirmedFollowup: OutreachProposal = {
+  ...pendingFollowup,
+  status: "APPROVED",
+  approval: {
+    decision: "APPROVED",
+    decided_at: "2026-08-19T20:06:00Z",
+    action_snapshot: {
+      vehicle_id: pendingFollowup.vehicle_id,
+      dealer_id: pendingFollowup.dealer_id,
+      recipient: pendingFollowup.recipient,
+      subject: pendingFollowup.subject,
+      body: pendingFollowup.body,
+    },
+  },
+  delivery: null,
+};
+
 type AgentEvent = {
   id: string;
   run_id: string;
@@ -291,6 +308,45 @@ const waitingForFollowupApprovalRun: AgentRun = {
   ],
 };
 
+const completedWithStalePendingFollowupRun: AgentRun = {
+  ...completedRun,
+  current_action_id: pendingFollowup.id,
+  last_message_id: "message-2",
+  events: [
+    ...waitingForFollowupApprovalRun.events,
+    event(
+      "event-8",
+      "RESPONSE_ANALYZED",
+      "OBSERVING_INTERACTION",
+      "A newer dealer response was analyzed against deterministic quote policy.",
+      { interaction_id: "interaction-1", message_id: "message-2" },
+    ),
+    event(
+      "event-9",
+      "INTERACTION_COMPLETE",
+      "INTERACTION_COMPLETE",
+      "The newer dealer offer is comparable.",
+      { interaction_id: "interaction-1", message_id: "message-2" },
+    ),
+  ],
+};
+
+const deliveryUnconfirmedFollowupRun: AgentRun = {
+  ...waitingForFollowupApprovalRun,
+  phase: "DELIVERY_UNCONFIRMED",
+  updated_at: "2026-08-19T20:06:01Z",
+  events: [
+    ...waitingForFollowupApprovalRun.events,
+    event(
+      "event-8",
+      "DELIVERY_UNCONFIRMED",
+      "DELIVERY_UNCONFIRMED",
+      "Follow-up approval was recorded, but dealer-message delivery is unconfirmed.",
+      { action_id: pendingFollowup.id, interaction_id: "interaction-1" },
+    ),
+  ],
+};
+
 const awaitingResponseInteraction = {
   id: "interaction-1",
   initial_action_id: sentProposal.id,
@@ -329,6 +385,80 @@ const followupApprovalInteraction = {
   analysis_status: "ANALYZED",
   followups: [pendingFollowup],
   latest_response_followup_status: "PENDING_APPROVAL",
+};
+
+const comparableLatestMessage = {
+  id: "message-2",
+  dealer_id: candidate.dealer_id,
+  vehicle_id: candidate.id,
+  direction: "INBOUND",
+  subject: "Complete written quote",
+  body: "For VIN KM8JCDD10SU000001, the selling price is $37,950 and cash OTD is $40,315.",
+  received_at: "2026-08-19T20:07:00Z",
+  source_provider: "fixture",
+};
+
+const comparableAfterStalePendingInteraction = {
+  ...followupApprovalInteraction,
+  followups: [pendingFollowup],
+  latest_response_followup_status: null,
+  messages: [
+    ...responseAnalysisInProgressInteraction.messages,
+    comparableLatestMessage,
+  ],
+  analysis: {
+    message: comparableLatestMessage,
+    extraction: {
+      vehicle_vin: "KM8JCDD10SU000001",
+      stock_number: null,
+      selling_price: "37950",
+      claimed_otd: "40315",
+      dealer_fees: [],
+      government_fees: [],
+      addons: [],
+      incentives: [],
+      financing_required: false,
+      trade_required: false,
+      expiration: null,
+      explicit_no_addons_statement: true,
+      explicit_all_fees_included_statement: true,
+      unresolved_questions: [],
+      evidence_ids: ["ev-selling-price", "ev-claimed-otd"],
+      extraction_confidence: 0.99,
+    },
+    evidence: [
+      {
+        id: "ev-selling-price",
+        source_type: "DEALER_EMAIL",
+        source_id: comparableLatestMessage.id,
+        field_name: "selling_price",
+        excerpt: "the selling price is $37,950",
+        created_at: comparableLatestMessage.received_at,
+      },
+      {
+        id: "ev-claimed-otd",
+        source_type: "DEALER_EMAIL",
+        source_id: comparableLatestMessage.id,
+        field_name: "claimed_otd",
+        excerpt: "cash OTD is $40,315",
+        created_at: comparableLatestMessage.received_at,
+      },
+    ],
+    assessment: {
+      comparable: true,
+      transparent: true,
+      reconciled: true,
+      missing_for_comparison: [],
+      missing_for_transparency: [],
+      reconciliation_difference: "0",
+    },
+  },
+};
+
+const deliveryUnconfirmedFollowupInteraction = {
+  ...comparableAfterStalePendingInteraction,
+  followups: [approvedUnconfirmedFollowup],
+  latest_response_followup_status: "APPROVED",
 };
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -398,6 +528,102 @@ describe("AgentWorkflow", () => {
       `${apiBaseUrl}/outreach/proposals/${pendingProposal.id}`,
     );
     expect(callsTo(fetchMock, `${apiBaseUrl}/outreach/proposals`, "POST")).toHaveLength(0);
+  });
+
+  it("adopts the durable run exposed by a recoverable create failure", async () => {
+    const runId = waitingForApprovalRun.run_id;
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      if (input === `${apiBaseUrl}/agent-runs` && init?.method === "POST") {
+        return jsonResponse({
+          detail: {
+            code: "agent_run_advancement_failed",
+            message: (
+              "The workflow was created but could not finish advancing. "
+              + "Inspect or resume the existing workflow."
+            ),
+            run_id: runId,
+          },
+        }, 500);
+      }
+      if (input === `${apiBaseUrl}/agent-runs/${runId}` && init?.method === undefined) {
+        return jsonResponse(waitingForApprovalRun);
+      }
+      if (
+        input === `${apiBaseUrl}/agent-runs/${runId}/resume`
+        && init?.method === "POST"
+      ) {
+        return jsonResponse(waitingForApprovalRun);
+      }
+      throw new Error(`Unexpected request: ${String(input)}`);
+    });
+
+    renderWorkflow();
+    fireEvent.click(screen.getByRole("button", { name: "Start agent workflow" }));
+
+    expect(await screen.findByText("Waiting for your approval")).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Start agent workflow" }))
+      .not.toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(callsTo(fetchMock, `${apiBaseUrl}/agent-runs`, "POST")).toHaveLength(1);
+    expect(callsTo(fetchMock, `${apiBaseUrl}/agent-runs/${runId}`)).toHaveLength(1);
+
+    fireEvent.click(screen.getByRole("button", { name: "Resume from latest state" }));
+
+    await waitFor(() => {
+      expect(callsTo(
+        fetchMock,
+        `${apiBaseUrl}/agent-runs/${runId}/resume`,
+        "POST",
+      )).toHaveLength(1);
+    });
+    expect(callsTo(fetchMock, `${apiBaseUrl}/agent-runs`, "POST")).toHaveLength(1);
+    expect(callsTo(fetchMock, `${apiBaseUrl}/outreach/proposals`, "POST")).toHaveLength(0);
+  });
+
+  it("keeps recovery available without replaying create when initial inspection fails", async () => {
+    const runId = waitingForApprovalRun.run_id;
+    let inspectionAttempts = 0;
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      if (input === `${apiBaseUrl}/agent-runs` && init?.method === "POST") {
+        return jsonResponse({
+          detail: {
+            code: "agent_run_advancement_failed",
+            message: (
+              "The workflow was created but could not finish advancing. "
+              + "Inspect or resume the existing workflow."
+            ),
+            run_id: runId,
+          },
+        }, 500);
+      }
+      if (input === `${apiBaseUrl}/agent-runs/${runId}` && init?.method === undefined) {
+        inspectionAttempts += 1;
+        return inspectionAttempts === 1
+          ? jsonResponse({ detail: { message: "Workflow inspection is temporarily unavailable." } }, 503)
+          : jsonResponse(waitingForApprovalRun);
+      }
+      throw new Error(`Unexpected request: ${String(input)}`);
+    });
+
+    renderWorkflow();
+    fireEvent.click(screen.getByRole("button", { name: "Start agent workflow" }));
+
+    const recoverButton = await screen.findByRole("button", {
+      name: "Recover existing workflow",
+    });
+    expect(screen.queryByRole("button", { name: "Start agent workflow" }))
+      .not.toBeInTheDocument();
+    expect(callsTo(fetchMock, `${apiBaseUrl}/agent-runs`, "POST")).toHaveLength(1);
+    expect(callsTo(fetchMock, `${apiBaseUrl}/agent-runs/${runId}`)).toHaveLength(1);
+
+    fireEvent.click(recoverButton);
+
+    expect(await screen.findByText("Waiting for your approval")).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Start agent workflow" }))
+      .not.toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(callsTo(fetchMock, `${apiBaseUrl}/agent-runs`, "POST")).toHaveLength(1);
+    expect(callsTo(fetchMock, `${apiBaseUrl}/agent-runs/${runId}`)).toHaveLength(2);
   });
 
   it("uses the existing approval endpoint before resuming the durable run", async () => {
@@ -499,6 +725,57 @@ describe("AgentWorkflow", () => {
     )).toHaveLength(1);
   });
 
+  it("keeps comparable interaction evidence visible without approving a stale pending follow-up", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      if (input === `${apiBaseUrl}/agent-runs` && init?.method === "POST") {
+        return jsonResponse(waitingForFollowupApprovalRun, 201);
+      }
+      if (
+        input === `${apiBaseUrl}/agent-runs/${waitingForFollowupApprovalRun.run_id}/resume`
+        && init?.method === "POST"
+      ) {
+        return jsonResponse(completedWithStalePendingFollowupRun);
+      }
+      if (input === `${apiBaseUrl}/outreach/proposals/${sentProposal.id}`) {
+        return jsonResponse(sentProposal);
+      }
+      if (input === `${apiBaseUrl}/outreach/proposals/${pendingFollowup.id}`) {
+        return jsonResponse(pendingFollowup);
+      }
+      if (input === `${apiBaseUrl}/outreach/proposals/${sentProposal.id}/interaction`) {
+        return jsonResponse(comparableAfterStalePendingInteraction);
+      }
+      throw new Error(`Unexpected request: ${String(input)}`);
+    });
+
+    renderWorkflow();
+    fireEvent.click(screen.getByRole("button", { name: "Start agent workflow" }));
+    expect(await screen.findByText("Waiting for your approval")).toBeVisible();
+
+    fireEvent.click(screen.getByRole("button", { name: "Resume from latest state" }));
+    expect(await screen.findByText("Offer is comparable")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "View dealer interaction" }));
+
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText("Dealer-stated quote facts")).toBeVisible();
+    const claimedOtdFact = within(dialog).getByText("Claimed out-the-door").closest(".fact");
+    expect(claimedOtdFact).not.toBeNull();
+    fireEvent.click(within(claimedOtdFact as HTMLElement).getByRole(
+      "button",
+      { name: "View evidence" },
+    ));
+    const evidence = await screen.findByRole("dialog", { name: "claimed otd" });
+    expect(within(evidence).getByText("cash OTD is $40,315")).toBeVisible();
+
+    expect(within(dialog).queryByRole("button", { name: "Approve & send" }))
+      .not.toBeInTheDocument();
+    expect(callsTo(
+      fetchMock,
+      `${apiBaseUrl}/outreach/proposals/${pendingFollowup.id}/approve`,
+      "POST",
+    )).toHaveLength(0);
+  });
+
   it("persists the demo response through its existing endpoint before resuming", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch")
       .mockResolvedValueOnce(jsonResponse(waitingForResponseRun, 201))
@@ -565,6 +842,39 @@ describe("AgentWorkflow", () => {
       )).toHaveLength(1);
     });
     expect(callsTo(fetchMock, `${apiBaseUrl}/outreach/proposals`, "POST")).toHaveLength(0);
+  });
+
+  it("exposes an unconfirmed follow-up read-only with its ambiguous delivery status", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(jsonResponse(deliveryUnconfirmedFollowupRun, 201))
+      .mockResolvedValueOnce(jsonResponse(sentProposal))
+      .mockResolvedValueOnce(jsonResponse(approvedUnconfirmedFollowup))
+      .mockResolvedValueOnce(jsonResponse(deliveryUnconfirmedFollowupInteraction));
+
+    renderWorkflow();
+    fireEvent.click(screen.getByRole("button", { name: "Start agent workflow" }));
+
+    const workflowState = (await screen.findByText("Review before taking another action."))
+      .closest("[role='status']");
+    expect(workflowState).not.toBeNull();
+    expect(within(workflowState as HTMLElement).getByText("Delivery unconfirmed")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "View dealer interaction" }));
+    const dialog = await screen.findByRole("dialog", { name: "Review dealer follow-up" });
+    expect(within(dialog).getByText("Delivery has not been confirmed.")).toBeVisible();
+    expect(within(dialog).getByText("Dealer-stated quote facts")).toBeVisible();
+    expect(within(dialog).queryByRole("button", { name: "Approve & send" }))
+      .not.toBeInTheDocument();
+    expect(within(dialog).queryByRole("button", { name: "Reject follow-up" }))
+      .not.toBeInTheDocument();
+    expect(within(dialog).queryByRole("button", { name: "Release dealer response" }))
+      .not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Resume from latest state" }))
+      .not.toBeInTheDocument();
+    expect(callsTo(
+      fetchMock,
+      `${apiBaseUrl}/outreach/proposals/${pendingFollowup.id}/approve`,
+      "POST",
+    )).toHaveLength(0);
   });
 
   it("renders only the user-safe event message and not arbitrary metadata", async () => {

@@ -435,7 +435,7 @@ def test_recreated_request_context_resumes_same_checkpoint_idempotently(
     assert len(event_ids) == len(set(event_ids)) == 3
 
 
-def test_initial_business_commit_recovers_when_checkpoint_write_fails(
+def test_initial_checkpoint_failure_exposes_publicly_recoverable_run_identity(
     agent_harness: AgentHarness,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -463,31 +463,38 @@ def test_initial_business_commit_recovers_when_checkpoint_write_fails(
     with TestClient(app, raise_server_exceptions=False) as client:
         failed = client.post("/agent-runs", json={"vehicle_id": "katy-blue"})
     assert failed.status_code == 500
+    assert failed.headers["content-type"].startswith("application/json"), failed.text
+    detail = failed.json()["detail"]
+    assert detail["code"] == "agent_run_advancement_failed"
+    assert detail["message"] == (
+        "The workflow was created but could not finish advancing. "
+        "Inspect or resume the existing workflow."
+    )
+    run_id = detail["run_id"]
+    assert run_id
 
-    with agent_harness.session_factory() as session:
-        persisted = session.scalar(select(AgentRunRecord))
-        assert persisted is not None
-        run_id = persisted.id
-        thread_id = persisted.thread_id
-        initial_action_id = persisted.initial_action_id
-        assert persisted.phase == "WAITING_FOR_APPROVAL"
-        assert persisted.current_action_id == initial_action_id
-        assert persisted.execution_token is None
-    assert _proposal_ids(agent_harness, "SEND_INITIAL_QUOTE_REQUEST") == [
-        initial_action_id
-    ]
+    with TestClient(app) as client:
+        inspected = _get_run(client, run_id)
+    assert inspected["id"] == run_id
+    assert inspected["phase"] == "WAITING_FOR_APPROVAL"
+    assert inspected["current_action_id"] == inspected["initial_action_id"]
 
     monkeypatch.setattr(AsyncSqliteSaver, "aput", original_aput)
     with TestClient(app) as client:
         recovered = _resume_run(client, run_id)
         duplicate = _resume_run(client, run_id)
+        reinspected = _get_run(client, run_id)
 
     assert recovered["phase"] == "WAITING_FOR_APPROVAL"
-    assert recovered["thread_id"] == thread_id
-    assert recovered["current_action_id"] == initial_action_id
+    assert recovered["thread_id"] == inspected["thread_id"]
+    assert recovered["current_action_id"] == inspected["initial_action_id"]
     assert duplicate["events"] == recovered["events"]
+    assert reinspected == duplicate
+    event_ids = [event["id"] for event in reinspected["events"]]
+    assert len(event_ids) == len(set(event_ids)) == 3
+    assert _count_rows(agent_harness, "agent_runs") == 1
     assert _proposal_ids(agent_harness, "SEND_INITIAL_QUOTE_REQUEST") == [
-        initial_action_id
+        inspected["initial_action_id"]
     ]
     assert agent_harness.messaging.calls == []
 

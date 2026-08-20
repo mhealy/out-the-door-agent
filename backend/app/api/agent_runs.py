@@ -4,7 +4,7 @@ from fastapi import APIRouter, Body, Depends, HTTPException, status
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
-from app.agent.graph import AgentWorkflowService
+from app.agent.graph import AgentRunAdvancementFailedError, AgentWorkflowService
 from app.config import Settings, get_settings
 from app.dependencies import (
     get_dealer_contact_resolver,
@@ -100,6 +100,18 @@ async def create_agent_run(
             detail={
                 "code": "candidate_not_found",
                 "message": "The selected inventory candidate was not found.",
+            },
+        ) from error
+    except AgentRunAdvancementFailedError as error:
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "code": "agent_run_advancement_failed",
+                "message": (
+                    "The workflow was created but could not finish advancing. "
+                    "Inspect or resume the existing workflow."
+                ),
+                "run_id": error.run_id,
             },
         ) from error
 

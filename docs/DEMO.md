@@ -154,4 +154,4 @@ Failures remain visible; the fallback never loads a prebuilt success database.
 
 The fallback proves application correctness reproducibly; it is not evidence of current
 live-model quality. Live model behavior is measured separately by the explicit eval
-commands in the README.
+commands and proof boundaries in [EVALS.md](EVALS.md).

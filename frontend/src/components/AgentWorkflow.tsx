@@ -1,4 +1,4 @@
-import { useCallback, useId, useState } from "react";
+import { useCallback, useEffect, useId, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 
 import { OutreachApproval, type OutreachCandidate } from "./OutreachApproval";
@@ -29,7 +29,7 @@ type AgentEvent = {
   metadata: Record<string, string | number | boolean | null>;
 };
 
-type AgentRun = {
+export type AgentRun = {
   id: string;
   run_id: string;
   thread_id: string;
@@ -236,16 +236,31 @@ function AgentActivity({ events }: { events: AgentEvent[] }) {
 
 export function AgentWorkflow({
   apiBaseUrl,
+  authoritativeActionId,
+  authorizationRequired,
   candidate,
+  initialRun,
   onRunChange,
 }: {
   apiBaseUrl: string;
+  authoritativeActionId?: string | null;
+  authorizationRequired?: boolean;
   candidate: OutreachCandidate;
+  initialRun?: AgentRun;
   onRunChange?: (run: AgentRunSnapshot) => void;
 }) {
   const headingId = useId();
-  const [run, setRun] = useState<AgentRun | null>(null);
+  const [run, setRun] = useState<AgentRun | null>(initialRun ?? null);
   const [recoverableRunId, setRecoverableRunId] = useState<string | null>(null);
+  useEffect(() => {
+    if (!initialRun) return;
+    setRun((current) => (
+      current?.run_id === initialRun.run_id
+      && current.updated_at === initialRun.updated_at
+        ? current
+        : initialRun
+    ));
+  }, [initialRun]);
   const adoptRun = useCallback((nextRun: AgentRun) => {
     setRun(nextRun);
     onRunChange?.({
@@ -315,15 +330,18 @@ export function AgentWorkflow({
   }
 
   const presentation = phasePresentations[run.phase];
-  const reviewLabel = run.phase === "WAITING_FOR_APPROVAL"
+  const authorizationEnabled = authorizationRequired ?? run.phase === "WAITING_FOR_APPROVAL";
+  const reviewLabel = authorizationEnabled
     ? "Review approval"
     : "View dealer interaction";
-  const authorizationEnabled = run.phase === "WAITING_FOR_APPROVAL";
-  const actionIdForReview = run.phase === "STARTING"
+  const phaseActionIdForReview = run.phase === "STARTING"
     ? null
     : authorizationEnabled || run.phase === "DELIVERY_UNCONFIRMED"
       ? run.current_action_id
       : run.initial_action_id;
+  const actionIdForReview = authorizationEnabled && authorizationRequired !== undefined
+    ? authoritativeActionId ?? null
+    : authoritativeActionId ?? phaseActionIdForReview;
 
   return <section className="agent-workflow" aria-labelledby={headingId}>
     <div className="agent-workflow-heading">
@@ -333,6 +351,10 @@ export function AgentWorkflow({
       </div>
       <code>{run.run_id}</code>
     </div>
+
+    {authorizationRequired !== undefined && <p className="agent-workflow-authority-note">
+      The purchase status above is authoritative. This phase is the orchestrator’s latest observation.
+    </p>}
 
     <div className={`agent-workflow-state agent-workflow-state-${presentation.tone}`} role="status">
       <strong>{presentation.title}</strong>

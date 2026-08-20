@@ -273,7 +273,13 @@ function OfferStatus({ offer }: { offer: ComparedOffer }) {
   </div>;
 }
 
-function Recommendation({ result }: { result: OfferComparisonResult }) {
+function Recommendation({
+  heading,
+  result,
+}: {
+  heading: string;
+  result: OfferComparisonResult;
+}) {
   const recommendation = result.recommendation;
   if (!recommendation) {
     return <section className="comparison-recommendation comparison-recommendation-empty">
@@ -300,7 +306,7 @@ function Recommendation({ result }: { result: OfferComparisonResult }) {
 
   return <section className="comparison-recommendation">
     <p className="eyebrow">Recommendation</p>
-    <h3>Best verified offer</h3>
+    <h3>{heading}</h3>
     <div className="comparison-winner">
       <strong>{recommendation.recommended_dealer_name}</strong>
       <span>{formatMoney(recommendation.recommended_otd)} written OTD</span>
@@ -338,30 +344,24 @@ function Recommendation({ result }: { result: OfferComparisonResult }) {
   </section>;
 }
 
-export function VerifiedOffersComparison({
-  apiBaseUrl,
-  runs,
+function VerifiedOffersPresentation({
+  error,
+  isPending,
+  recommendationHeading,
+  result,
 }: {
-  apiBaseUrl: string;
-  runs: AgentRunSnapshot[];
+  error?: string;
+  isPending?: boolean;
+  recommendationHeading: string;
+  result?: OfferComparisonResult;
 }) {
   const [selectedEvidence, setSelectedEvidence] = useState<{
     agentRunId: string;
     evidenceId: string;
     sourceId: string;
   } | null>(null);
-  const comparison = useQuery({
-    queryKey: [
-      "offer-comparison",
-      apiBaseUrl,
-      runs.map((run) => ({ run_id: run.run_id, updated_at: run.updated_at })),
-    ],
-    queryFn: () => compareOffers(apiBaseUrl, runs),
-    enabled: runs.length >= 2,
-    retry: false,
-  });
-  const selectedOffer = selectedEvidence && comparison.data
-    ? comparison.data.offers.find(
+  const selectedOffer = selectedEvidence && result
+    ? result.offers.find(
       (offer) => offer.agent_run_id === selectedEvidence.agentRunId,
     ) ?? null
     : null;
@@ -374,12 +374,10 @@ export function VerifiedOffersComparison({
     ) ?? null
     : null;
   useEffect(() => {
-    if (selectedEvidence && comparison.data && !currentEvidence) {
+    if (selectedEvidence && result && !currentEvidence) {
       setSelectedEvidence(null);
     }
-  }, [comparison.data, currentEvidence, selectedEvidence]);
-
-  if (runs.length < 2) return null;
+  }, [currentEvidence, result, selectedEvidence]);
 
   return <section className="verified-offers" aria-labelledby="verified-offers-heading">
     <p className="eyebrow">Cross-dealer decision</p>
@@ -388,14 +386,14 @@ export function VerifiedOffersComparison({
       Advertised inventory prices and dealer-written out-the-door totals are separate facts. Only offers that satisfy authoritative comparison policy can win.
     </p>
 
-    {comparison.isPending && <p className="analysis-status" role="status">
+    {isPending && <p className="analysis-status" role="status">
       Loading current authoritative dealer-run results…
     </p>}
-    {comparison.isError && <p className="error" role="alert">
-      {comparison.error.message}
+    {error && <p className="error" role="alert">
+      {error}
     </p>}
 
-    {comparison.data && <>
+    {result && <>
       <div className="comparison-table-scroll">
         <table aria-label="Verified dealer offers" className="comparison-table">
           <thead>
@@ -410,7 +408,7 @@ export function VerifiedOffersComparison({
             </tr>
           </thead>
           <tbody>
-            {comparison.data.offers.map((offer) => <tr
+            {result.offers.map((offer) => <tr
               className={`comparison-row comparison-row-${statusPresentations[offer.comparison_status].tone}`}
               key={offer.agent_run_id}
             >
@@ -441,7 +439,7 @@ export function VerifiedOffersComparison({
           </tbody>
         </table>
       </div>
-      <Recommendation result={comparison.data} />
+      <Recommendation heading={recommendationHeading} result={result} />
     </>}
 
     {currentEvidence && <EvidenceDrawer
@@ -450,4 +448,45 @@ export function VerifiedOffersComparison({
       onClose={() => setSelectedEvidence(null)}
     />}
   </section>;
+}
+
+export function VerifiedOffersComparisonView({
+  recommendationHeading = "Best verified offer",
+  result,
+}: {
+  recommendationHeading?: string;
+  result: OfferComparisonResult;
+}) {
+  return <VerifiedOffersPresentation
+    recommendationHeading={recommendationHeading}
+    result={result}
+  />;
+}
+
+export function VerifiedOffersComparison({
+  apiBaseUrl,
+  runs,
+}: {
+  apiBaseUrl: string;
+  runs: AgentRunSnapshot[];
+}) {
+  const comparison = useQuery({
+    queryKey: [
+      "offer-comparison",
+      apiBaseUrl,
+      runs.map((run) => ({ run_id: run.run_id, updated_at: run.updated_at })),
+    ],
+    queryFn: () => compareOffers(apiBaseUrl, runs),
+    enabled: runs.length >= 2,
+    retry: false,
+  });
+
+  if (runs.length < 2) return null;
+
+  return <VerifiedOffersPresentation
+    error={comparison.isError ? comparison.error.message : undefined}
+    isPending={comparison.isPending}
+    recommendationHeading="Best verified offer"
+    result={comparison.data}
+  />;
 }

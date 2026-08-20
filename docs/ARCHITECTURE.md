@@ -96,6 +96,9 @@ It still exercises the real APIs, services, persistence, checkpoints, approval p
 fixture transport, inbound path, comparison, and research retrieval. Live model
 evaluations remain separate, explicit, credentialed checks.
 
+See [EVALS.md](EVALS.md) for the model-call inventory, proof boundaries, corpus
+dimensions, run history, and limitations.
+
 ## Research boundary
 
 Research targets are reconstructed from the latest authoritative quote and limited to

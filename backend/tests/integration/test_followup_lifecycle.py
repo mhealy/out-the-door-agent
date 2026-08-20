@@ -297,6 +297,54 @@ def _persist_analysis(
     return message_id
 
 
+def _persist_unanalyzed_response(
+    session_factory: sessionmaker[Session],
+    initial_action_id: str,
+    *,
+    analysis_status: str,
+) -> str:
+    received_at = datetime.now(timezone.utc)
+    message_id = f"newer-{analysis_status.casefold()}-{initial_action_id}"
+    with session_factory() as session:
+        interaction = session.scalar(
+            select(DealerInteractionRecord).where(
+                DealerInteractionRecord.initial_action_id == initial_action_id
+            )
+        )
+        assert interaction is not None
+        session.add(
+            InboundDealerMessageRecord(
+                id=message_id,
+                interaction_id=interaction.id,
+                source_fixture_id=f"fixture-{message_id}",
+                dealer_id=interaction.dealer_id,
+                vehicle_id=interaction.vehicle_id,
+                subject="Newer dealer response",
+                body="This newer dealer response must supersede the pending follow-up.",
+                received_at=received_at,
+                source_provider="fixture",
+                analysis_status=analysis_status,
+                analysis_error_code=(
+                    "quote_extraction_failed"
+                    if analysis_status == "ANALYSIS_FAILED"
+                    else None
+                ),
+                analysis_claim_token=(
+                    "newer-analysis-claim"
+                    if analysis_status == "ANALYSIS_IN_PROGRESS"
+                    else None
+                ),
+                analysis_claimed_at=(
+                    received_at
+                    if analysis_status == "ANALYSIS_IN_PROGRESS"
+                    else None
+                ),
+            )
+        )
+        session.commit()
+    return message_id
+
+
 def _prepare_followup(client: TestClient, initial_action_id: str):
     return client.post(
         f"/outreach/proposals/{initial_action_id}/followups",
@@ -738,6 +786,82 @@ def test_stale_pending_followup_cannot_be_approved_after_a_newer_analysis(
         (proposal_b["id"], source_b),
     ]
     assert (round_state.sent_count, round_state.reserved_count) == (1, 0)
+
+
+@pytest.mark.parametrize(
+    "analysis_status",
+    ["RESPONSE_RECEIVED", "ANALYSIS_IN_PROGRESS", "ANALYSIS_FAILED"],
+)
+def test_stale_pending_followup_cannot_be_approved_after_newer_raw_evidence(
+    followup_client: tuple[
+        TestClient,
+        RecordingMessagingProvider,
+        RecordingDrafter,
+        sessionmaker[Session],
+    ],
+    analysis_status: str,
+) -> None:
+    client, messaging, drafter, session_factory = followup_client
+    initial = _send_initial(client)
+    messaging.calls.clear()
+    _persist_analysis(
+        session_factory,
+        str(initial["id"]),
+        missing_for_comparison=["claimed_otd"],
+        source_message_id=f"source-a-{initial['id']}",
+    )
+    proposal = _prepare_followup(client, str(initial["id"])).json()
+    assert proposal["status"] == "PENDING_APPROVAL"
+
+    newer_message_id = _persist_unanalyzed_response(
+        session_factory,
+        str(initial["id"]),
+        analysis_status=analysis_status,
+    )
+
+    stale_approval = client.post(
+        f"/outreach/proposals/{proposal['id']}/approve",
+        json={},
+    )
+
+    assert stale_approval.status_code == 409
+    assert stale_approval.json()["detail"]["code"] == "followup_source_changed"
+    assert messaging.calls == []
+    stale_proposal = client.get(
+        f"/outreach/proposals/{proposal['id']}"
+    ).json()
+    assert stale_proposal["status"] == "PENDING_APPROVAL"
+    assert stale_proposal["approval"] is None
+    assert stale_proposal["delivery"] is None
+    interaction = client.get(
+        f"/outreach/proposals/{initial['id']}/interaction"
+    ).json()
+    assert interaction["analysis_status"] == analysis_status
+    assert interaction["messages"][-1]["id"] == newer_message_id
+    assert interaction["sent_followup_count"] == 0
+    assert interaction["followup_limit_reached"] is False
+    with session_factory() as session:
+        round_state = session.execute(
+            text(
+                "select sent_count, reserved_count "
+                "from dealer_interaction_followup_states"
+            )
+        ).one()
+        assert (round_state.sent_count, round_state.reserved_count) == (0, 0)
+        assert session.scalar(
+            text(
+                "select count(*) from approvals "
+                "where proposed_action_id = :action_id"
+            ),
+            {"action_id": proposal["id"]},
+        ) == 0
+        assert session.scalar(
+            text(
+                "select count(*) from outbound_deliveries "
+                "where proposed_action_id = :action_id"
+            ),
+            {"action_id": proposal["id"]},
+        ) == 0
 
 
 def test_approval_sends_exact_persisted_followup_once_and_history_tracks_it(

@@ -17,7 +17,6 @@ from app.providers.quote_extraction import (
 from app.services.evidence_validation import EvidenceValidationError, validate_evidence
 
 
-pytestmark = pytest.mark.eval
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 RAW_CASES_PATH = (
     REPOSITORY_ROOT / "demo" / "dealer_messages" / "quote_analysis_cases.json"
@@ -113,10 +112,35 @@ QUESTION_CONCEPT_ANCHORS = (
     frozenset({"addon"}),
     frozenset({"eligibility"}),
     frozenset({"store", "visit"}),
-    frozenset({"vehicle", "which"}),
     frozenset({"quote", "email"}),
     frozenset({"financing"}),
     frozenset({"trade"}),
+)
+QUESTION_MULTI_VEHICLE_TOKEN_GROUPS = (
+    frozenset({"vehicle", "vehicles"}),
+    frozenset(
+        {
+            "two",
+            "multiple",
+            "distinct",
+            "alternative",
+            "alternatives",
+            "option",
+            "options",
+        }
+    ),
+    frozenset(
+        {
+            "which",
+            "select",
+            "selected",
+            "selection",
+            "ambiguous",
+            "applicable",
+            "identify",
+            "identification",
+        }
+    ),
 )
 
 
@@ -239,9 +263,20 @@ def _question_checks(
     return expected_recall, actual_precision
 
 
+def _is_multi_vehicle_ambiguity(tokens: set[str]) -> bool:
+    return all(tokens & group for group in QUESTION_MULTI_VEHICLE_TOKEN_GROUPS)
+
+
 def _question_concept_matches(actual: str, expected: str) -> bool:
     actual_tokens = _tokens(actual)
     expected_tokens = _tokens(expected)
+    actual_is_multi_vehicle_ambiguity = _is_multi_vehicle_ambiguity(actual_tokens)
+    expected_is_multi_vehicle_ambiguity = _is_multi_vehicle_ambiguity(expected_tokens)
+    if actual_is_multi_vehicle_ambiguity or expected_is_multi_vehicle_ambiguity:
+        return (
+            actual_is_multi_vehicle_ambiguity
+            and expected_is_multi_vehicle_ambiguity
+        )
     if any(
         anchor.issubset(actual_tokens) and anchor.issubset(expected_tokens)
         for anchor in QUESTION_CONCEPT_ANCHORS
@@ -250,6 +285,62 @@ def _question_concept_matches(actual: str, expected: str) -> bool:
     overlap = actual_tokens & expected_tokens
     shortest = min(len(actual_tokens), len(expected_tokens))
     return shortest > 0 and len(overlap) >= 2 and len(overlap) / shortest >= 0.4
+
+
+def _expected_multi_vehicle_question() -> str:
+    expected_case = next(
+        case for case in EXPECTED_CASES if case["case_id"] == "msg-multiple-vehicles"
+    )
+    return str(expected_case["extraction"]["unresolved_questions"][0])
+
+
+def test_multi_vehicle_matcher_accepts_committed_label_itself() -> None:
+    expected_question = _expected_multi_vehicle_question()
+
+    assert _question_checks([expected_question], [expected_question]) == (
+        [True],
+        [True],
+    )
+
+
+def test_multi_vehicle_matcher_accepts_captured_release_wording() -> None:
+    expected_question = _expected_multi_vehicle_question()
+    actual_question = (
+        "The response provides distinct terms for two vehicles, so the applicable "
+        "VIN, stock number, selling price, and OTD are ambiguous until a vehicle "
+        "is selected."
+    )
+
+    assert _question_checks([actual_question], [expected_question]) == (
+        [True],
+        [True],
+    )
+
+
+@pytest.mark.parametrize(
+    "unrelated_question",
+    [
+        "Which vehicle has a sunroof?",
+        "Which vehicle has mandatory add-ons?",
+        "Which vehicle is available in blue?",
+        "The vehicle selected is the cheapest one.",
+    ],
+    ids=[
+        "sunroof",
+        "mandatory_addons",
+        "blue_vehicle",
+        "selected_cheapest",
+    ],
+)
+def test_multi_vehicle_matcher_rejects_unrelated_vehicle_language(
+    unrelated_question: str,
+) -> None:
+    expected_question = _expected_multi_vehicle_question()
+
+    assert _question_checks([unrelated_question], [expected_question]) == (
+        [False],
+        [False],
+    )
 
 
 def _evidence_claim_text(
@@ -531,6 +622,7 @@ def live_extractor() -> OpenAIQuoteExtractor:
     )
 
 
+@pytest.mark.eval
 @pytest.mark.parametrize(
     "expected_value",
     EXPECTED_CASES,

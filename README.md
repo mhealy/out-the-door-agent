@@ -254,7 +254,9 @@ Normal CI runs those backend and frontend commands on pull requests and pushes t
 
 ### Live model evaluations
 
-Live evals require explicit consent and a configured key:
+See [docs/EVALS.md](docs/EVALS.md) for the complete production model inventory,
+proof boundaries, case dimensions, denominator corrections, run history, and known
+limitations. Live evals require explicit consent and a configured key:
 
 ```powershell
 $env:OTD_RUN_LIVE_EVALS="1"
@@ -262,9 +264,17 @@ python -m pytest -m eval tests/evals
 ```
 
 Missing consent, missing credentials, or provider failures are not reported as passes.
-The most recent documented `gpt-5.6` reference runs were 15/15 strict quote-extraction
-cases on August 19, 2026 and 9/9 strict research-synthesis cases on August 20, 2026.
-Future runs may vary; the command output is authoritative for the run being discussed.
+The final suite contains 41 eval-marked items but only 36 primary-model cases: 15 quote
+extractions, 12 follow-up drafts, and 9 research syntheses. Research also makes nine
+same-model semantic-grader calls; five remaining items are deterministic or no-call
+checks. The once-only August 20, 2026 release-candidate run used `gpt-5.6`: research
+was 9/9, follow-up contract conformance was 12/13 with a safe paraphrase rejected by
+the exact-wording gate, and quote extraction was raw 14/15 because an equivalent
+vehicle-ambiguity phrase exposed an evaluator defect. The precision-safe no-call
+matcher correctly classifies the captured response; the offline corrected
+interpretation of the 15-case quote segment is therefore 15/15. The hosted suite was
+not rerun. Future runs may vary; the raw output and full classification in
+`docs/EVALS.md` are authoritative.
 
 ## Design principles
 

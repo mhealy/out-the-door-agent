@@ -1,7 +1,8 @@
 import { FormEvent, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 
-import { OutreachApproval, type OutreachCandidate } from "./components/OutreachApproval";
+import { AgentWorkflow } from "./components/AgentWorkflow";
+import type { OutreachCandidate } from "./components/OutreachApproval";
 import { QuoteAnalysisWorkspace } from "./components/QuoteAnalysisWorkspace";
 
 type Criteria = { make: string; model: string; hard_constraints: string[]; soft_preferences: string[] };
@@ -55,7 +56,7 @@ function CandidateCard({ candidate }: { candidate: Candidate }) {
     <h3>{candidate.year} {candidate.make} {candidate.model} {candidate.trim}</h3>
     <p className="price">{candidate.advertised_price ? `$${Number(candidate.advertised_price).toLocaleString()}` : "Price unavailable"}</p>
     <p>{candidate.exterior_color} · {candidate.features.join(" · ")}</p>
-    <OutreachApproval apiBaseUrl={apiBaseUrl} candidate={candidate} />
+    <AgentWorkflow apiBaseUrl={apiBaseUrl} candidate={candidate} />
   </article>;
 }
 

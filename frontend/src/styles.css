@@ -595,6 +595,133 @@ button.secondary-button {
   background: #f5e9c7;
 }
 
+.agent-workflow {
+  padding-top: 1rem;
+  margin-top: 1rem;
+  border-top: 1px solid #d8e1d9;
+}
+
+.agent-workflow h4,
+.agent-activity h4 {
+  margin: 0.2rem 0 0;
+}
+
+.agent-workflow-empty > p:not(.eyebrow) {
+  margin: 0.55rem 0 0;
+  color: #45534a;
+  line-height: 1.45;
+}
+
+.agent-workflow-heading,
+.agent-workflow-section-heading,
+.agent-event-heading,
+.agent-workflow-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.agent-workflow-heading {
+  align-items: flex-start;
+}
+
+.agent-workflow-heading code {
+  max-width: 12rem;
+  color: #657269;
+  font-size: 0.7rem;
+  overflow-wrap: anywhere;
+}
+
+.agent-workflow-state {
+  display: grid;
+  gap: 0.3rem;
+  padding: 0.9rem 1rem;
+  margin-top: 1rem;
+  border: 1px solid;
+  border-radius: 0.7rem;
+}
+
+.agent-workflow-state span {
+  font-size: 0.88rem;
+  line-height: 1.4;
+}
+
+.agent-workflow-state-active {
+  border-color: #a9c4af;
+  color: #205b37;
+  background: #e3eee5;
+}
+
+.agent-workflow-state-warning {
+  border-color: #d1ae5a;
+  color: #624710;
+  background: #fff9e9;
+}
+
+.agent-workflow-state-complete {
+  border-color: #76a183;
+  color: #205b37;
+  background: #dcefe2;
+}
+
+.agent-workflow-state-failed {
+  border-color: #c68c8c;
+  color: #8b2424;
+  background: #fff7f7;
+}
+
+.agent-activity {
+  padding-top: 1rem;
+}
+
+.agent-workflow-section-heading > span {
+  color: #657269;
+  font-size: 0.75rem;
+}
+
+.agent-activity-list {
+  display: grid;
+  gap: 0.6rem;
+  padding: 0;
+  margin: 0.75rem 0 0;
+  list-style: none;
+}
+
+.agent-activity-list li {
+  padding: 0.75rem;
+  border-left: 3px solid #76a183;
+  border-radius: 0.4rem;
+  background: #f5f7f3;
+}
+
+.agent-event-heading time,
+.agent-event-node {
+  color: #657269;
+  font-size: 0.72rem;
+}
+
+.agent-activity-list p {
+  margin: 0.4rem 0;
+  color: #45534a;
+  font-size: 0.86rem;
+  line-height: 1.4;
+}
+
+.agent-event-node {
+  text-transform: capitalize;
+}
+
+.agent-workflow-actions {
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  margin-top: 1rem;
+}
+
+.agent-workflow-actions button {
+  margin: 0;
+}
+
 .outreach-interaction {
   padding: 1rem;
   margin-top: 1rem;
@@ -832,7 +959,7 @@ button.outreach-reject-button {
   .evidence-drawer { right: 1rem; bottom: 1rem; width: calc(100vw - 2rem); max-height: calc(100vh - 2rem); }
   .outreach-backdrop { align-items: start; padding: 1rem; }
   .outreach-dialog { max-height: calc(100vh - 2rem); }
-  .outreach-dialog-heading, .outreach-actions, .followup-controls { align-items: stretch; flex-direction: column; }
+  .outreach-dialog-heading, .outreach-actions, .followup-controls, .agent-workflow-actions { align-items: stretch; flex-direction: column; }
   .outreach-dialog-heading button, .outreach-actions button { width: 100%; }
   .followup-round-status { justify-items: stretch; }
   .outreach-meta { grid-template-columns: 1fr; }

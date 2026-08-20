@@ -1,1 +1,1 @@
-"""Deterministic business services (implemented in later phases)."""
+"""Deterministic application business services."""

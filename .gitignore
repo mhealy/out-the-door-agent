@@ -1,8 +1,9 @@
 # ------------------------------------------------------------
-# Local project specification and log
+# Local project specification and private working material
 # ------------------------------------------------------------
 ENGINEERING_SPEC.md
 PROJECT_LESSONS.md
+private/
 
 # ------------------------------------------------------------
 # Environment / secrets

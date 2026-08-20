@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { AgentWorkflow, type AgentRun } from "./AgentWorkflow";
@@ -5,6 +6,7 @@ import type { OutreachCandidate } from "./OutreachApproval";
 import {
   VerifiedOffersComparisonView,
   type OfferComparisonResult,
+  type ResearchTargetView,
 } from "./VerifiedOffersComparison";
 
 type PurchaseSetupStatus = "READY" | "RECOVERY_REQUIRED";
@@ -85,8 +87,23 @@ export type PurchaseWorkspaceModel = {
 };
 
 type ApiErrorPayload = {
-  detail?: string | { message?: string };
+  detail?: string | { code?: string; message?: string };
 };
+
+class ResearchApiError extends Error {
+  readonly code: string | null;
+  readonly status: number;
+
+  constructor(
+    message: string,
+    { code, status }: { code: string | null; status: number },
+  ) {
+    super(message);
+    this.name = "ResearchApiError";
+    this.code = code;
+    this.status = status;
+  }
+}
 
 const decisionLabels: Record<PurchaseDecisionStatus, string> = {
   GATHERING_OFFERS: "Gathering offers",
@@ -138,6 +155,47 @@ async function recoverPurchase(
     throw await apiError(response, "The missing dealer workflows could not be recovered.");
   }
   return response.json() as Promise<PurchaseWorkspaceModel>;
+}
+
+async function inspectResearchTargets(
+  apiBaseUrl: string,
+  purchaseId: string,
+): Promise<ResearchTargetView[]> {
+  const response = await fetch(
+    `${apiBaseUrl}/purchase-runs/${encodeURIComponent(purchaseId)}/research-targets`,
+  );
+  if (!response.ok) {
+    throw await apiError(response, "Independent research targets could not be loaded.");
+  }
+  return response.json() as Promise<ResearchTargetView[]>;
+}
+
+async function investigateResearchTarget(
+  apiBaseUrl: string,
+  purchaseId: string,
+  targetId: string,
+): Promise<ResearchTargetView> {
+  const response = await fetch(
+    `${apiBaseUrl}/purchase-runs/${encodeURIComponent(purchaseId)}/research-targets/${encodeURIComponent(targetId)}/investigate`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{}",
+    },
+  );
+  if (!response.ok) {
+    const payload = (await response.json().catch(() => null)) as ApiErrorPayload | null;
+    const detail = payload?.detail;
+    const message = typeof detail === "string"
+      ? detail
+      : detail?.message ?? "Independent research could not be completed.";
+    const code = typeof detail === "string" ? null : detail?.code ?? null;
+    throw new ResearchApiError(message, {
+      code,
+      status: response.status,
+    });
+  }
+  return response.json() as Promise<ResearchTargetView>;
 }
 
 function countLabels(counts: PurchaseStatusCounts): string[] {
@@ -234,6 +292,80 @@ export function PurchaseWorkspace({
     queryFn: () => inspectPurchase(apiBaseUrl, purchaseId),
     retry: false,
   });
+  const authoritativeVersion = purchase.data?.updated_at ?? null;
+  const researchQueryKey = [
+    "purchase-research-targets",
+    apiBaseUrl,
+    purchaseId,
+    authoritativeVersion,
+  ] as const;
+  const hasDisplayedAddons = purchase.data?.comparison?.offers.some(
+    (offer) => offer.mandatory_addons.length > 0,
+  ) ?? false;
+  const researchTargets = useQuery({
+    queryKey: researchQueryKey,
+    queryFn: () => inspectResearchTargets(apiBaseUrl, purchaseId),
+    enabled: hasDisplayedAddons,
+    retry: false,
+  });
+  const [researchErrors, setResearchErrors] = useState<Record<string, string>>({});
+  const [researchNotice, setResearchNotice] = useState<string | null>(null);
+  const pendingResearchTargetIdsRef = useRef(new Set<string>());
+  const [pendingResearchTargetIds, setPendingResearchTargetIds] = useState<string[]>([]);
+  const investigation = useMutation({
+    mutationFn: (targetId: string) => (
+      investigateResearchTarget(apiBaseUrl, purchaseId, targetId)
+    ),
+    onMutate: (targetId) => {
+      setResearchNotice(null);
+      setResearchErrors((current) => {
+        if (!(targetId in current)) return current;
+        const next = { ...current };
+        delete next[targetId];
+        return next;
+      });
+    },
+    onSuccess: (updatedTarget) => {
+      queryClient.setQueryData<ResearchTargetView[]>(researchQueryKey, (current) => (
+        current?.map((target) => (
+          target.target_id === updatedTarget.target_id ? updatedTarget : target
+        )) ?? [updatedTarget]
+      ));
+    },
+    onError: (error, targetId) => {
+      if (
+        error instanceof ResearchApiError
+        && error.status === 409
+        && error.code === "research_target_changed"
+      ) {
+        queryClient.setQueryData<ResearchTargetView[]>(researchQueryKey, []);
+        setResearchNotice(error.message);
+        void purchase.refetch();
+        return;
+      }
+      setResearchErrors((current) => ({
+        ...current,
+        [targetId]: error instanceof Error
+          ? error.message
+          : "Independent research could not be completed.",
+      }));
+      if (
+        error instanceof ResearchApiError
+        && error.status === 409
+        && error.code === "research_in_progress"
+      ) {
+        void queryClient.invalidateQueries({
+          queryKey: researchQueryKey,
+          exact: true,
+        });
+      }
+    },
+    onSettled: (_data, _error, targetId) => {
+      pendingResearchTargetIdsRef.current.delete(targetId);
+      setPendingResearchTargetIds([...pendingResearchTargetIdsRef.current]);
+    },
+    retry: false,
+  });
   const recovery = useMutation({
     mutationFn: () => recoverPurchase(apiBaseUrl, purchaseId),
     onSuccess: (recovered) => {
@@ -241,6 +373,13 @@ export function PurchaseWorkspace({
     },
     retry: false,
   });
+
+  useEffect(() => {
+    setResearchErrors({});
+  }, [apiBaseUrl, authoritativeVersion, purchaseId]);
+  useEffect(() => {
+    setResearchNotice(null);
+  }, [apiBaseUrl, purchaseId]);
 
   if (purchase.isPending) {
     return <main className="purchase-workspace">
@@ -291,6 +430,21 @@ export function PurchaseWorkspace({
 
     {workspace.comparison && <VerifiedOffersComparisonView
       recommendationHeading={recommendationHeading}
+      research={{
+        targets: researchTargets.data ?? [],
+        pendingTargetIds: pendingResearchTargetIds,
+        errors: researchErrors,
+        notice: researchNotice,
+        loadError: researchTargets.isError
+          ? researchTargets.error.message
+          : null,
+        onInvestigate: (targetId) => {
+          if (pendingResearchTargetIdsRef.current.has(targetId)) return;
+          pendingResearchTargetIdsRef.current.add(targetId);
+          setPendingResearchTargetIds([...pendingResearchTargetIdsRef.current]);
+          investigation.mutate(targetId);
+        },
+      }}
       result={workspace.comparison}
     />}
 

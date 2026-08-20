@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { AgentWorkflow } from "./AgentWorkflow";
+import { AgentWorkflow, type AgentRunSnapshot } from "./AgentWorkflow";
 import type { OutreachCandidate, OutreachProposal } from "./OutreachApproval";
 
 const apiBaseUrl = "http://api.test";
@@ -468,7 +468,7 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
-function renderWorkflow() {
+function renderWorkflow(onRunChange?: (run: AgentRunSnapshot) => void) {
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: { retry: false },
@@ -477,7 +477,11 @@ function renderWorkflow() {
   });
   return render(
     <QueryClientProvider client={queryClient}>
-      <AgentWorkflow apiBaseUrl={apiBaseUrl} candidate={candidate} />
+      <AgentWorkflow
+        apiBaseUrl={apiBaseUrl}
+        candidate={candidate}
+        onRunChange={onRunChange}
+      />
     </QueryClientProvider>,
   );
 }
@@ -495,6 +499,106 @@ function callsTo(
 afterEach(() => vi.restoreAllMocks());
 
 describe("AgentWorkflow", () => {
+  it("reports the stable run identity and phase to its parent after creation", async () => {
+    const onRunChange = vi.fn();
+    const fetchMock = vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(jsonResponse(waitingForApprovalRun, 201));
+
+    renderWorkflow(onRunChange);
+    fireEvent.click(screen.getByRole("button", { name: "Start agent workflow" }));
+
+    expect(await screen.findByText("Waiting for your approval")).toBeVisible();
+    expect(onRunChange).toHaveBeenCalledTimes(1);
+    expect(onRunChange).toHaveBeenLastCalledWith({
+      run_id: waitingForApprovalRun.run_id,
+      vehicle_id: waitingForApprovalRun.vehicle_id,
+      phase: waitingForApprovalRun.phase,
+      updated_at: waitingForApprovalRun.updated_at,
+    });
+    expect(callsTo(fetchMock, `${apiBaseUrl}/agent-runs`, "POST")).toHaveLength(1);
+  });
+
+  it("reports an explicitly recovered run without recreating the workflow", async () => {
+    const onRunChange = vi.fn();
+    const runId = waitingForApprovalRun.run_id;
+    let inspectionAttempts = 0;
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      if (input === `${apiBaseUrl}/agent-runs` && init?.method === "POST") {
+        return jsonResponse({
+          detail: {
+            code: "agent_run_advancement_failed",
+            message: "The workflow exists but its first inspection failed.",
+            run_id: runId,
+          },
+        }, 500);
+      }
+      if (input === `${apiBaseUrl}/agent-runs/${runId}` && init?.method === undefined) {
+        inspectionAttempts += 1;
+        return inspectionAttempts === 1
+          ? jsonResponse({ detail: { message: "Inspection is temporarily unavailable." } }, 503)
+          : jsonResponse(waitingForApprovalRun);
+      }
+      throw new Error(`Unexpected request: ${String(input)}`);
+    });
+
+    renderWorkflow(onRunChange);
+    fireEvent.click(screen.getByRole("button", { name: "Start agent workflow" }));
+    fireEvent.click(await screen.findByRole("button", {
+      name: "Recover existing workflow",
+    }));
+
+    expect(await screen.findByText("Waiting for your approval")).toBeVisible();
+    expect(onRunChange).toHaveBeenCalledTimes(1);
+    expect(onRunChange).toHaveBeenLastCalledWith({
+      run_id: waitingForApprovalRun.run_id,
+      vehicle_id: waitingForApprovalRun.vehicle_id,
+      phase: waitingForApprovalRun.phase,
+      updated_at: waitingForApprovalRun.updated_at,
+    });
+    expect(callsTo(fetchMock, `${apiBaseUrl}/agent-runs`, "POST")).toHaveLength(1);
+    expect(callsTo(fetchMock, `${apiBaseUrl}/agent-runs/${runId}`)).toHaveLength(2);
+  });
+
+  it("reports the newer authoritative phase after resuming the same run", async () => {
+    const onRunChange = vi.fn();
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      if (input === `${apiBaseUrl}/agent-runs` && init?.method === "POST") {
+        return jsonResponse(waitingForResponseRun, 201);
+      }
+      if (
+        input === `${apiBaseUrl}/agent-runs/${waitingForResponseRun.run_id}/resume`
+        && init?.method === "POST"
+      ) {
+        return jsonResponse(completedRun);
+      }
+      if (input === `${apiBaseUrl}/outreach/proposals/${sentProposal.id}`) {
+        return jsonResponse(sentProposal);
+      }
+      throw new Error(`Unexpected request: ${String(input)}`);
+    });
+
+    renderWorkflow(onRunChange);
+    fireEvent.click(screen.getByRole("button", { name: "Start agent workflow" }));
+    expect(await screen.findByText("Waiting for dealer response")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Resume from latest state" }));
+
+    expect(await screen.findByText("Offer is comparable")).toBeVisible();
+    expect(onRunChange).toHaveBeenCalledTimes(2);
+    expect(onRunChange).toHaveBeenNthCalledWith(1, {
+      run_id: waitingForResponseRun.run_id,
+      vehicle_id: waitingForResponseRun.vehicle_id,
+      phase: waitingForResponseRun.phase,
+      updated_at: waitingForResponseRun.updated_at,
+    });
+    expect(onRunChange).toHaveBeenNthCalledWith(2, {
+      run_id: completedRun.run_id,
+      vehicle_id: completedRun.vehicle_id,
+      phase: completedRun.phase,
+      updated_at: completedRun.updated_at,
+    });
+    expect(callsTo(fetchMock, `${apiBaseUrl}/agent-runs`, "POST")).toHaveLength(1);
+  });
+
   it("creates a run, shows its authoritative wait and activity, and reviews the existing action", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch")
       .mockResolvedValueOnce(jsonResponse(waitingForApprovalRun, 201))

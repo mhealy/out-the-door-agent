@@ -548,7 +548,7 @@ function StructuredQuote({
   </section>;
 }
 
-function EvidenceDrawer({ evidence, onClose }: { evidence: Evidence; onClose: () => void }) {
+export function EvidenceDrawer({ evidence, onClose }: { evidence: Evidence; onClose: () => void }) {
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const headingId = useId();
 

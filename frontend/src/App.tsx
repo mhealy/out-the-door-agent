@@ -1,9 +1,10 @@
-import { FormEvent, useState } from "react";
+import { FormEvent, useCallback, useRef, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 
-import { AgentWorkflow } from "./components/AgentWorkflow";
+import { AgentWorkflow, type AgentRunSnapshot } from "./components/AgentWorkflow";
 import type { OutreachCandidate } from "./components/OutreachApproval";
 import { QuoteAnalysisWorkspace } from "./components/QuoteAnalysisWorkspace";
+import { VerifiedOffersComparison } from "./components/VerifiedOffersComparison";
 
 type Criteria = { make: string; model: string; hard_constraints: string[]; soft_preferences: string[] };
 type Interpretation = { criteria: Criteria; assumptions: string[]; unresolved_ambiguities: string[] };
@@ -50,28 +51,63 @@ function InterpretedCriteria({ interpretation }: { interpretation: Interpretatio
   </div>;
 }
 
-function CandidateCard({ candidate }: { candidate: Candidate }) {
+function CandidateCard({ candidate, onRunChange }: {
+  candidate: Candidate;
+  onRunChange: (run: AgentRunSnapshot) => void;
+}) {
   return <article>
     <p className="eyebrow">{candidate.dealer_name} · {candidate.distance_miles} mi</p>
     <h3>{candidate.year} {candidate.make} {candidate.model} {candidate.trim}</h3>
     <p className="price">{candidate.advertised_price ? `$${Number(candidate.advertised_price).toLocaleString()}` : "Price unavailable"}</p>
     <p>{candidate.exterior_color} · {candidate.features.join(" · ")}</p>
-    <AgentWorkflow apiBaseUrl={apiBaseUrl} candidate={candidate} />
+    <AgentWorkflow
+      apiBaseUrl={apiBaseUrl}
+      candidate={candidate}
+      onRunChange={onRunChange}
+    />
   </article>;
 }
 
-function CandidateGrid({ candidates }: { candidates: Candidate[] }) {
+function CandidateGrid({ candidates, onRunChange }: {
+  candidates: Candidate[];
+  onRunChange: (run: AgentRunSnapshot) => void;
+}) {
   return <>
     <h2>{candidates.length} qualified candidates</h2>
-    <div className="candidate-grid">{candidates.map((candidate) => <CandidateCard key={candidate.id} candidate={candidate} />)}</div>
+    <div className="candidate-grid">{candidates.map((candidate) => <CandidateCard
+      candidate={candidate}
+      key={candidate.id}
+      onRunChange={onRunChange}
+    />)}</div>
     {!candidates.length && <p>No vehicles meet every hard constraint. No limits were relaxed.</p>}
   </>;
 }
 
 export function App() {
   const [goal, setGoal] = useState(exampleGoal);
+  const [runsByVehicleId, setRunsByVehicleId] = useState<Record<string, AgentRunSnapshot>>({});
+  const [searchRevision, setSearchRevision] = useState(0);
+  const activeSearchRevision = useRef(0);
   const mutation = useMutation({ mutationFn: search });
-  const submit = (event: FormEvent) => { event.preventDefault(); mutation.mutate(goal); };
+  const recordRun = useCallback((run: AgentRunSnapshot) => {
+    if (activeSearchRevision.current !== searchRevision) return;
+    setRunsByVehicleId((knownRuns) => ({
+      ...knownRuns,
+      [run.vehicle_id]: run,
+    }));
+  }, [searchRevision]);
+  const submit = (event: FormEvent) => {
+    event.preventDefault();
+    const nextRevision = activeSearchRevision.current + 1;
+    activeSearchRevision.current = nextRevision;
+    setSearchRevision(nextRevision);
+    setRunsByVehicleId({});
+    mutation.mutate(goal);
+  };
+  const currentRuns = mutation.data?.candidates.flatMap((candidate) => {
+    const run = runsByVehicleId[candidate.id];
+    return run ? [run] : [];
+  }) ?? [];
   return <main>
     <p className="eyebrow">Vehicle offer intelligence</p><h1>OutTheDoor</h1>
     <p className="summary">Describe the vehicle you want. We’ll preserve your hard limits and show the best matching fixture inventory.</p>
@@ -79,7 +115,12 @@ export function App() {
     {mutation.isError && <p className="error">{mutation.error.message}</p>}
     {mutation.data && <section className="results">
       <InterpretedCriteria interpretation={mutation.data.interpretation} />
-      <CandidateGrid candidates={mutation.data.candidates} />
+      <CandidateGrid
+        candidates={mutation.data.candidates}
+        key={searchRevision}
+        onRunChange={recordRun}
+      />
+      <VerifiedOffersComparison apiBaseUrl={apiBaseUrl} runs={currentRuns} />
     </section>}
     <QuoteAnalysisWorkspace apiBaseUrl={apiBaseUrl} />
   </main>;

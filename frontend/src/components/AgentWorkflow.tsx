@@ -1,9 +1,9 @@
-import { useId, useState } from "react";
+import { useCallback, useId, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 
 import { OutreachApproval, type OutreachCandidate } from "./OutreachApproval";
 
-type RunPhase =
+export type RunPhase =
   | "STARTING"
   | "WAITING_FOR_APPROVAL"
   | "WAITING_FOR_EXTERNAL_RESPONSE"
@@ -44,6 +44,11 @@ type AgentRun = {
   updated_at: string;
   events: AgentEvent[];
 };
+
+export type AgentRunSnapshot = Pick<
+  AgentRun,
+  "run_id" | "vehicle_id" | "phase" | "updated_at"
+>;
 
 type ApiErrorDetail = {
   code?: string;
@@ -232,13 +237,24 @@ function AgentActivity({ events }: { events: AgentEvent[] }) {
 export function AgentWorkflow({
   apiBaseUrl,
   candidate,
+  onRunChange,
 }: {
   apiBaseUrl: string;
   candidate: OutreachCandidate;
+  onRunChange?: (run: AgentRunSnapshot) => void;
 }) {
   const headingId = useId();
   const [run, setRun] = useState<AgentRun | null>(null);
   const [recoverableRunId, setRecoverableRunId] = useState<string | null>(null);
+  const adoptRun = useCallback((nextRun: AgentRun) => {
+    setRun(nextRun);
+    onRunChange?.({
+      run_id: nextRun.run_id,
+      vehicle_id: nextRun.vehicle_id,
+      phase: nextRun.phase,
+      updated_at: nextRun.updated_at,
+    });
+  }, [onRunChange]);
   const createMutation = useMutation({
     mutationFn: () => createAgentRun(apiBaseUrl, candidate.id),
     onError: (error) => {
@@ -248,7 +264,7 @@ export function AgentWorkflow({
     },
     onSuccess: (createdRun) => {
       setRecoverableRunId(null);
-      setRun(createdRun);
+      adoptRun(createdRun);
     },
     retry: false,
   });
@@ -257,13 +273,13 @@ export function AgentWorkflow({
     onSuccess: (recoveredRun) => {
       createMutation.reset();
       setRecoverableRunId(null);
-      setRun(recoveredRun);
+      adoptRun(recoveredRun);
     },
     retry: false,
   });
   const resumeMutation = useMutation({
     mutationFn: (runId: string) => resumeAgentRun(apiBaseUrl, runId),
-    onSuccess: setRun,
+    onSuccess: adoptRun,
     retry: false,
   });
 

@@ -10,3 +10,5 @@
 *.db
 *.sqlite*
 ENGINEERING_SPEC.md
+PROJECT_LESSONS.md
+private/

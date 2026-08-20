@@ -292,12 +292,10 @@ export function PurchaseWorkspace({
     queryFn: () => inspectPurchase(apiBaseUrl, purchaseId),
     retry: false,
   });
-  const authoritativeVersion = purchase.data?.updated_at ?? null;
   const researchQueryKey = [
     "purchase-research-targets",
     apiBaseUrl,
     purchaseId,
-    authoritativeVersion,
   ] as const;
   const hasDisplayedAddons = purchase.data?.comparison?.offers.some(
     (offer) => offer.mandatory_addons.length > 0,
@@ -341,6 +339,7 @@ export function PurchaseWorkspace({
         queryClient.setQueryData<ResearchTargetView[]>(researchQueryKey, []);
         setResearchNotice(error.message);
         void purchase.refetch();
+        void researchTargets.refetch();
         return;
       }
       setResearchErrors((current) => ({
@@ -376,8 +375,6 @@ export function PurchaseWorkspace({
 
   useEffect(() => {
     setResearchErrors({});
-  }, [apiBaseUrl, authoritativeVersion, purchaseId]);
-  useEffect(() => {
     setResearchNotice(null);
   }, [apiBaseUrl, purchaseId]);
 
@@ -453,6 +450,7 @@ export function PurchaseWorkspace({
       children={workspace.children}
       onAuthoritativeChange={() => {
         void purchase.refetch();
+        void researchTargets.refetch();
       }}
     />
   </main>;

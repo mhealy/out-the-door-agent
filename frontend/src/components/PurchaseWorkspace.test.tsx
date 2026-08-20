@@ -439,6 +439,61 @@ const canonicalComparison = {
   },
 };
 
+const responseBInteractionId = "interaction-houston-response-b";
+const responseBMessageId = "message-houston-response-b";
+const responseBCeramicEvidenceId = "ev-houston-ceramic-response-b";
+const responseBOtdEvidenceId = "ev-houston-otd-response-b";
+
+const responseBHoustonOffer = {
+  ...houstonOffer,
+  interaction_id: responseBInteractionId,
+  mandatory_addons: [
+    {
+      name: "Ceramic Shield",
+      amount: "1299",
+      stated_mandatory: true,
+      evidence_id: responseBCeramicEvidenceId,
+    },
+  ],
+  evidence: [
+    {
+      id: responseBCeramicEvidenceId,
+      source_type: "DEALER_EMAIL",
+      source_id: responseBMessageId,
+      field_name: "addons",
+      excerpt: "Our current response lists Ceramic Shield for $1,299 as mandatory.",
+      created_at: "2026-08-19T20:29:30Z",
+    },
+    {
+      id: responseBOtdEvidenceId,
+      source_type: "DEALER_EMAIL",
+      source_id: responseBMessageId,
+      field_name: "claimed_otd",
+      excerpt: "The current written out-the-door total is $41,780.",
+      created_at: "2026-08-19T20:29:30Z",
+    },
+  ],
+  claimed_otd_evidence_ids: [responseBOtdEvidenceId],
+};
+
+const responseBComparison = {
+  ...canonicalComparison,
+  offers: [baytownOffer, responseBHoustonOffer, katyOffer],
+};
+
+const responseBNoAddonsHoustonOffer = {
+  ...responseBHoustonOffer,
+  mandatory_addons: [],
+  evidence: responseBHoustonOffer.evidence.filter((item) => (
+    item.id === responseBOtdEvidenceId
+  )),
+};
+
+const responseBNoAddonsComparison = {
+  ...canonicalComparison,
+  offers: [baytownOffer, responseBNoAddonsHoustonOffer, katyOffer],
+};
+
 const researchTargetsUrl = `${apiBaseUrl}/purchase-runs/${purchaseId}/research-targets`;
 
 function investigateUrl(targetId: string) {
@@ -493,6 +548,14 @@ const ceramicTarget = {
   source_evidence_ids: ["ev-houston-ceramic"],
   recommended: true,
   investigation: null,
+};
+
+const responseBCeramicTarget = {
+  ...ceramicTarget,
+  target_id: "research-target-houston-ceramic-response-b",
+  interaction_id: responseBInteractionId,
+  source_message_id: responseBMessageId,
+  source_evidence_ids: [responseBCeramicEvidenceId],
 };
 
 const secureTrackTarget = {
@@ -1008,7 +1071,8 @@ describe("PurchaseWorkspace", () => {
     expect(within(firstTerm as HTMLElement).queryByRole("region", {
       name: "Independent research for Protection Package",
     })).not.toBeInTheDocument();
-    expect(within(secondTerm as HTMLElement).getByText(identityFinding.summary)).toBeVisible();
+    expect(await within(secondTerm as HTMLElement).findByText(identityFinding.summary))
+      .toBeVisible();
     expect(within(secondTerm as HTMLElement).getByRole("region", {
       name: "Independent research for Protection Package",
     })).toBeVisible();
@@ -1291,60 +1355,128 @@ describe("PurchaseWorkspace", () => {
       .toHaveLength(1);
   });
 
-  it("refetches research for a new authoritative workspace version and hides the old finding", async () => {
+  it("refreshes research after a child authority event even when the workspace timestamp is unchanged", async () => {
+    const unchangedUpdatedAt = "2026-08-19T20:12:00Z";
+    const waitingHoustonRun = agentRun(houston, "WAITING_FOR_ANALYSIS", {
+      interaction_id: "interaction-houston",
+      last_message_id: "message-houston",
+    });
+    const refreshedHoustonRun = agentRun(houston, "INTERACTION_COMPLETE", {
+      interaction_id: responseBInteractionId,
+      last_message_id: responseBMessageId,
+    });
+    const responseAWorkspace = canonicalWorkspace({
+      children: [
+        child(baytown, agentRun(baytown, "INTERACTION_COMPLETE"), "OFFER_VERIFIED", {
+          comparison_status: "VERIFIED",
+          active_unresolved: false,
+        }),
+        child(houston, waitingHoustonRun, "OFFER_VERIFIED", {
+          comparison_status: "VERIFIED",
+          active_unresolved: false,
+        }),
+        child(katy, agentRun(katy, "WAITING_FOR_APPROVAL", {
+          initial_action_id: "action-katy-initial",
+          current_action_id: "action-katy-followup",
+          interaction_id: "interaction-katy",
+        }), "APPROVAL_REQUIRED", {
+          comparison_status: "INCOMPLETE",
+          active_unresolved: true,
+        }),
+      ],
+      updated_at: unchangedUpdatedAt,
+    });
+    const responseBWorkspace = canonicalWorkspace({
+      children: [
+        child(baytown, agentRun(baytown, "INTERACTION_COMPLETE"), "OFFER_VERIFIED", {
+          comparison_status: "VERIFIED",
+          active_unresolved: false,
+        }),
+        child(houston, refreshedHoustonRun, "OFFER_VERIFIED", {
+          comparison_status: "VERIFIED",
+          active_unresolved: false,
+        }),
+        child(katy, agentRun(katy, "WAITING_FOR_APPROVAL", {
+          initial_action_id: "action-katy-initial",
+          current_action_id: "action-katy-followup",
+          interaction_id: "interaction-katy",
+        }), "APPROVAL_REQUIRED", {
+          comparison_status: "INCOMPLETE",
+          active_unresolved: true,
+        }),
+      ],
+      comparison: responseBComparison,
+      updated_at: unchangedUpdatedAt,
+    });
+    let purchaseReads = 0;
     let targetReads = 0;
     const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
       if (input === `${apiBaseUrl}/purchase-runs/${purchaseId}` && init?.method === undefined) {
-        return jsonResponse(canonicalWorkspace());
+        purchaseReads += 1;
+        return jsonResponse(purchaseReads === 1 ? responseAWorkspace : responseBWorkspace);
       }
       if (input === researchTargetsUrl && init?.method === undefined) {
         targetReads += 1;
-        return jsonResponse(targetReads === 1 ? [completedCeramicTarget] : [ceramicTarget]);
+        return jsonResponse(
+          targetReads === 1 ? [completedCeramicTarget] : [responseBCeramicTarget],
+        );
+      }
+      if (input === `${apiBaseUrl}/agent-runs/run-houston/resume` && init?.method === "POST") {
+        return jsonResponse(refreshedHoustonRun);
       }
       throw new Error(`Unexpected request: ${String(input)}`);
     });
     const { queryClient } = renderWorkspace();
 
     expect(await screen.findByText(ceramicFinding.summary)).toBeVisible();
-    await act(async () => {
-      queryClient.setQueryData(
-        ["purchase-run", apiBaseUrl, purchaseId],
-        canonicalWorkspace({ updated_at: "2026-08-19T20:30:00Z" }),
-      );
-    });
+    const houstonWorkflow = screen.getByText("run-houston").closest("article");
+    expect(houstonWorkflow).not.toBeNull();
+    fireEvent.click(within(houstonWorkflow as HTMLElement).getByRole("button", {
+      name: "Resume from latest state",
+    }));
 
+    await waitFor(() => expect(callsTo(
+      fetchMock,
+      `${apiBaseUrl}/purchase-runs/${purchaseId}`,
+    )).toHaveLength(2));
     await waitFor(() => expect(callsTo(fetchMock, researchTargetsUrl)).toHaveLength(2));
     await waitFor(() => expect(screen.queryByText(ceramicFinding.summary))
       .not.toBeInTheDocument());
-    expect(screen.getByRole("button", { name: "Investigate Ceramic Shield" }))
+    expect(await screen.findByRole("button", { name: "Investigate Ceramic Shield" }))
       .toBeVisible();
+    expect(queryClient.getQueryData([
+      "purchase-research-targets",
+      apiBaseUrl,
+      purchaseId,
+    ])).toEqual([responseBCeramicTarget]);
     expect(callsTo(fetchMock, investigateUrl(ceramicTarget.target_id), "POST"))
+      .toHaveLength(0);
+    expect(callsTo(fetchMock, investigateUrl(responseBCeramicTarget.target_id), "POST"))
       .toHaveLength(0);
   });
 
-  it("closes an external-source drawer and removes old findings after a stale 409 refetch", async () => {
+  it("loads the replacement target after a stale 409 even when the workspace timestamp is unchanged", async () => {
     const staleMessage = (
       "This research target changed with the dealer's latest quote. "
       + "Review the current term before investigating."
     );
+    const unchangedUpdatedAt = "2026-08-19T20:12:00Z";
+    const refreshedPurchaseResponse = deferred<Response>();
+    const refreshedTargetsResponse = deferred<Response>();
     let purchaseReads = 0;
     let targetReads = 0;
     const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
       if (input === `${apiBaseUrl}/purchase-runs/${purchaseId}` && init?.method === undefined) {
         purchaseReads += 1;
-        return jsonResponse(canonicalWorkspace({
-          updated_at: purchaseReads === 1
-            ? "2026-08-19T20:12:00Z"
-            : "2026-08-19T20:31:00Z",
-        }));
+        return purchaseReads === 1
+          ? jsonResponse(canonicalWorkspace({ updated_at: unchangedUpdatedAt }))
+          : refreshedPurchaseResponse.promise;
       }
       if (input === researchTargetsUrl && init?.method === undefined) {
         targetReads += 1;
-        return jsonResponse(
-          targetReads === 1
-            ? [completedCeramicTarget, secureTrackTarget]
-            : [],
-        );
+        return targetReads === 1
+          ? jsonResponse([completedCeramicTarget, secureTrackTarget])
+          : refreshedTargetsResponse.promise;
       }
       if (input === investigateUrl(secureTrackTarget.target_id) && init?.method === "POST") {
         return jsonResponse({
@@ -1356,7 +1488,7 @@ describe("PurchaseWorkspace", () => {
       }
       throw new Error(`Unexpected request: ${String(input)}`);
     });
-    renderWorkspace();
+    const { queryClient } = renderWorkspace();
 
     const table = await screen.findByRole("table", { name: "Verified dealer offers" });
     const houstonRow = within(table).getByRole("row", { name: /Houston Hyundai/i });
@@ -1384,8 +1516,88 @@ describe("PurchaseWorkspace", () => {
         .not.toBeInTheDocument();
       expect(screen.queryByText(ceramicFinding.summary)).not.toBeInTheDocument();
     });
-    expect(within(houstonRow).queryByRole("button", { name: /Investigate/i }))
-      .not.toBeInTheDocument();
+    await act(async () => {
+      refreshedPurchaseResponse.resolve(jsonResponse(canonicalWorkspace({
+        comparison: responseBComparison,
+        updated_at: unchangedUpdatedAt,
+      })));
+      refreshedTargetsResponse.resolve(jsonResponse([responseBCeramicTarget]));
+      await Promise.all([
+        refreshedPurchaseResponse.promise,
+        refreshedTargetsResponse.promise,
+      ]);
+    });
+    expect(await screen.findByRole("button", { name: "Investigate Ceramic Shield" }))
+      .toBeVisible();
+    expect(queryClient.getQueryData([
+      "purchase-research-targets",
+      apiBaseUrl,
+      purchaseId,
+    ])).toEqual([responseBCeramicTarget]);
+    expect(screen.queryByText("SecureTrack theft recovery")).not.toBeInTheDocument();
+    expect(callsTo(fetchMock, investigateUrl(responseBCeramicTarget.target_id), "POST"))
+      .toHaveLength(0);
+  });
+
+  it("keeps stale findings hidden when the refreshed quote removes every material add-on", async () => {
+    const staleMessage = (
+      "This research target changed with the dealer's latest quote. "
+      + "Review the current term before investigating."
+    );
+    const unchangedUpdatedAt = "2026-08-19T20:12:00Z";
+    let purchaseReads = 0;
+    let targetReads = 0;
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      if (input === `${apiBaseUrl}/purchase-runs/${purchaseId}` && init?.method === undefined) {
+        purchaseReads += 1;
+        return jsonResponse(canonicalWorkspace({
+          comparison: purchaseReads === 1
+            ? canonicalComparison
+            : responseBNoAddonsComparison,
+          updated_at: unchangedUpdatedAt,
+        }));
+      }
+      if (input === researchTargetsUrl && init?.method === undefined) {
+        targetReads += 1;
+        return jsonResponse(
+          targetReads === 1
+            ? [completedCeramicTarget, secureTrackTarget]
+            : [],
+        );
+      }
+      if (input === investigateUrl(secureTrackTarget.target_id) && init?.method === "POST") {
+        return jsonResponse({
+          detail: {
+            code: "research_target_changed",
+            message: staleMessage,
+          },
+        }, 409);
+      }
+      throw new Error(`Unexpected request: ${String(input)}`);
+    });
+    const { queryClient } = renderWorkspace();
+
+    expect(await screen.findByText(ceramicFinding.summary)).toBeVisible();
+    fireEvent.click(screen.getByRole("button", {
+      name: "Investigate SecureTrack theft recovery",
+    }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(staleMessage);
+    await waitFor(() => expect(callsTo(
+      fetchMock,
+      `${apiBaseUrl}/purchase-runs/${purchaseId}`,
+    )).toHaveLength(2));
+    await waitFor(() => expect(callsTo(fetchMock, researchTargetsUrl)).toHaveLength(2));
+    await waitFor(() => {
+      expect(screen.queryByText(ceramicFinding.summary)).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /Investigate/i }))
+        .not.toBeInTheDocument();
+    });
+    expect(queryClient.getQueryData([
+      "purchase-research-targets",
+      apiBaseUrl,
+      purchaseId,
+    ])).toEqual([]);
   });
 
   it("hydrates a persisted finding after reload without another investigation POST", async () => {

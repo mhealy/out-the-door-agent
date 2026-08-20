@@ -20,7 +20,7 @@ class Base(DeclarativeBase):
 
 
 class PurchaseRun(Base):
-    """Minimal persisted run record; workflow state arrives in a later phase."""
+    """Durable identity for one coordinated set of dealer workflows."""
 
     __tablename__ = "purchase_runs"
 
@@ -29,6 +29,49 @@ class PurchaseRun(Base):
     status: Mapped[str] = mapped_column(String(32), default="CREATED")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+
+class PurchaseRunVehicleRecord(Base):
+    """Selected-vehicle intent and its nullable durable child-run association."""
+
+    __tablename__ = "purchase_run_vehicles"
+    __table_args__ = (
+        UniqueConstraint(
+            "purchase_run_id",
+            "vehicle_id",
+            name="uq_purchase_run_vehicle",
+        ),
+        UniqueConstraint(
+            "purchase_run_id",
+            "position",
+            name="uq_purchase_run_vehicle_position",
+        ),
+        UniqueConstraint(
+            "agent_run_id",
+            name="uq_purchase_run_vehicle_agent_run",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    purchase_run_id: Mapped[str] = mapped_column(
+        ForeignKey("purchase_runs.id"), index=True
+    )
+    vehicle_id: Mapped[str] = mapped_column(String(128), index=True)
+    position: Mapped[int] = mapped_column(Integer())
+    agent_run_id: Mapped[str | None] = mapped_column(
+        ForeignKey("agent_runs.id"), nullable=True
+    )
+    last_creation_error: Mapped[str | None] = mapped_column(
+        String(128), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
     )
 
 

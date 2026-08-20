@@ -7,6 +7,7 @@ from uuid import NAMESPACE_URL, uuid4, uuid5
 
 from sqlalchemy import or_, select, update
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.domain.agent_run import (
@@ -29,6 +30,10 @@ class AgentRunAlreadyAdvancingError(RuntimeError):
 
 class AgentRunExecutionLeaseLostError(RuntimeError):
     """The current request no longer owns the run execution lease."""
+
+
+class AgentRunIdentityConflictError(RuntimeError):
+    """A caller-reserved run identity belongs to another vehicle."""
 
 
 @dataclass(frozen=True)
@@ -68,9 +73,16 @@ class AgentRunRepository:
         self._session = session
         self._execution_token = execution_token
 
-    def create(self, vehicle_id: str) -> AgentRun:
+    def create(self, vehicle_id: str, *, run_id: str | None = None) -> AgentRun:
+        if run_id is not None:
+            existing = self._session.get(AgentRunRecord, run_id)
+            if existing is not None:
+                if existing.vehicle_id != vehicle_id:
+                    raise AgentRunIdentityConflictError(run_id)
+                return self.get(run_id)
+
         now = datetime.now(timezone.utc)
-        run_id = str(uuid4())
+        durable_run_id = run_id or str(uuid4())
         thread_id = str(uuid4())
         initial_action_id = str(uuid4())
         started = NewAgentEvent(
@@ -78,9 +90,9 @@ class AgentRunRepository:
             event_type="RUN_STARTED",
             message="Agent workflow started for the selected vehicle.",
         )
-        started_id = _event_id(run_id, started.semantic_key)
+        started_id = _event_id(durable_run_id, started.semantic_key)
         record = AgentRunRecord(
-            id=run_id,
+            id=durable_run_id,
             thread_id=thread_id,
             vehicle_id=vehicle_id,
             phase="STARTING",
@@ -92,17 +104,28 @@ class AgentRunRepository:
             updated_at=now,
         )
         self._session.add(record)
-        self._session.flush()
-        self._insert_event(
-            record,
-            node="load_run_context",
-            phase="STARTING",
-            event=started,
-            created_at=now,
-        )
-        self._session.commit()
+        try:
+            self._session.flush()
+            self._insert_event(
+                record,
+                node="load_run_context",
+                phase="STARTING",
+                event=started,
+                created_at=now,
+            )
+            self._session.commit()
+        except IntegrityError:
+            self._session.rollback()
+            if run_id is None:
+                raise
+            existing = self._session.get(AgentRunRecord, run_id)
+            if existing is None:
+                raise
+            if existing.vehicle_id != vehicle_id:
+                raise AgentRunIdentityConflictError(run_id)
+            return self.get(run_id)
         self._session.expire_all()
-        return self.get(run_id)
+        return self.get(durable_run_id)
 
     def get_record(self, run_id: str) -> AgentRunRecord:
         record = self._session.get(AgentRunRecord, run_id)

@@ -928,11 +928,19 @@ class AgentWorkflowService:
         )
         self._checkpoint_path = checkpoint_path
 
-    async def create(self, vehicle_id: str) -> AgentRun:
+    async def create(
+        self,
+        vehicle_id: str,
+        *,
+        run_id: str | None = None,
+    ) -> AgentRun:
         vehicle = await self._inventory_provider.get_by_id(vehicle_id)
         if vehicle is None:
             raise CandidateNotFoundError(vehicle_id)
-        run = AgentRunRepository(self._session).create(vehicle_id)
+        run = AgentRunRepository(self._session).create(
+            vehicle_id,
+            run_id=run_id,
+        )
         try:
             return await self._advance(run)
         except Exception as error:

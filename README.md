@@ -1,24 +1,27 @@
 # OutTheDoor
 
-OutTheDoor is an agentic AI buyer advocate for vehicle purchasing. It is designed to acquire and interpret written dealer offers, preserve evidence for material financial claims, and compare true out-the-door economics while keeping outbound dealer communication under explicit human control. The current vertical slices provide deterministic fixture inventory search, approval-gated initial quote requests, and bounded model-backed analysis of fixture dealer responses, followed by deterministic vehicle-identity, quote-completeness, transparency, and arithmetic assessment.
+OutTheDoor is an agentic AI buyer advocate for vehicle purchasing. It is designed to acquire and interpret written dealer offers, preserve evidence for material financial claims, and compare true out-the-door economics while keeping outbound dealer communication under explicit human control. The current vertical slices provide deterministic fixture inventory search, durable single-dealer LangGraph workflows, approval-gated initial and follow-up messages, evidence-backed dealer-response analysis, and deterministic vehicle-identity, quote-completeness, transparency, and arithmetic assessment.
 
-> Screenshot/GIF placeholder — the buyer workspace now includes inventory search, exact-message outreach approval, and the dealer-response analysis lab; a polished demo capture remains follow-up documentation work.
+> Screenshot/GIF placeholder — the buyer workspace now includes inventory search, durable workflow status/activity, exact-message outreach approval, and evidence-backed dealer-response analysis; a polished demo capture remains follow-up documentation work.
 
 ## Architecture
 
 ```text
 React + TypeScript buyer workspace
-              │ REST (SSE in a later phase)
+              │ explicit REST events/resume
               ▼
           FastAPI API
               │
+     LangGraph sequencing and waits
+              │
        domain / services / providers
               │
-              ▼
-     SQLAlchemy 2 + SQLite
+       ┌──────┴─────────┐
+       ▼                ▼
+application SQLite   checkpoint SQLite
 ```
 
-LangGraph orchestration is intentionally deferred to a later issue. Initial outreach is composed deterministically because application policy already knows every required field; immutable proposals, exact approval snapshots, and delivery receipts are persisted before and after the fixture transport boundary. Quote extraction is a task-scoped provider call with no tools; deterministic services validate every evidence reference and source excerpt before applying comparison requirements and Decimal-based arithmetic. A quote can therefore be comparable without being transparent, and reconciliation remains unknown whenever line-item arithmetic is incomplete or ambiguous.
+LangGraph owns only sequencing, routing, durable waiting, and checkpointed resume for one selected dealer/vehicle interaction. Every resume reloads authoritative application records. Existing services continue to own quote policy, evidence, follow-up requirements and limits, source freshness, exact approval content, dealer contacts, and messaging side effects. Initial outreach is composed deterministically because application policy already knows every required field; immutable proposals, exact approval snapshots, and delivery receipts are persisted before and after the fixture transport boundary. Quote extraction is a task-scoped provider call with no tools; deterministic services validate every evidence reference and source excerpt before applying comparison requirements and Decimal-based arithmetic.
 
 The backend keeps domain contracts, deterministic services, external providers, API routes, orchestration, and persistence in separate packages. The implemented vertical slices stay within those boundaries while later orchestration and purchasing capabilities remain deferred.
 
@@ -26,9 +29,9 @@ The backend keeps domain contracts, deterministic services, external providers, 
 
 ## Tech stack
 
-- Python 3.12+, FastAPI, Pydantic v2, SQLAlchemy 2, SQLite, OpenAI Python SDK, pytest
+- Python 3.12+, FastAPI, Pydantic v2, SQLAlchemy 2, SQLite, LangGraph, OpenAI Python SDK, pytest
 - React, TypeScript, Vite, TanStack Query
-- LangGraph is part of the planned stack but is not installed or implemented yet
+- Separate application and LangGraph checkpoint SQLite stores
 
 ## Prerequisites
 
@@ -62,8 +65,10 @@ Copy `.env.example` to `.env` at the repository root. Add `OTD_OPENAI_API_KEY` t
 | `OTD_APP_NAME` | `OutTheDoor API` | API display name |
 | `OTD_ENVIRONMENT` | `development` | Runtime environment label |
 | `OTD_DATABASE_URL` | `sqlite:///./out_the_door.db` | SQLAlchemy database URL |
+| `OTD_LANGGRAPH_CHECKPOINT_PATH` | `./out_the_door_checkpoints.db` | Separate durable LangGraph checkpoint file |
 | `OTD_CORS_ORIGINS` | `["http://localhost:5173"]` | JSON array of allowed origins |
 | `OTD_QUOTE_EXTRACTION_MODEL` | `gpt-5.6` | Structured-output model used for dealer quote extraction |
+| `OTD_FOLLOWUP_DRAFTING_MODEL` | `gpt-5.6` | Structured-output model used only for bounded follow-up wording |
 | `OTD_OPENAI_API_KEY` | none | Secret used only by the configured quote extractor |
 | `VITE_API_BASE_URL` | `http://localhost:8000` | Frontend API base URL |
 
@@ -77,7 +82,7 @@ Start the backend from `backend/` after activating its virtual environment:
 uvicorn app.main:app --reload
 ```
 
-The API is available at `http://localhost:8000`; `GET /health` returns `{"status":"ok"}`. The local SQLite schema is created at startup.
+The API is available at `http://localhost:8000`; `GET /health` returns `{"status":"ok"}`. Application tables are created at startup, and the separate checkpoint schema is initialized on the first agent run.
 
 Start the frontend from `frontend/` in another terminal:
 
@@ -93,7 +98,7 @@ Alternatively, Docker users can start both applications from the repository root
 docker compose up --build
 ```
 
-Compose pins the container database to `/data/out_the_door.db` so the named volume remains authoritative; the local `OTD_DATABASE_URL` value is used by non-container runs.
+Compose pins the application and checkpoint databases to separate files under `/data` so the named volume remains authoritative; local settings are used by non-container runs.
 
 ## Checks
 
@@ -134,7 +139,7 @@ This post-correction reference command passed all strict assertions. The initial
 
 ## Demo mode
 
-Start both applications and open `http://localhost:5173`. The top workspace searches the canonical Houston-area fixture inventory. Each candidate offers **Prepare quote request**. The approval dialog shows the exact candidate, fictitious `.example.test` recipient, subject, full deterministic body, reason, and requested-information checklist before any send. **Approve & send** records the approval before using the side-effect-free fixture provider and then shows its persisted delivery receipt; **Reject request** records the rejection and performs no send.
+Start both applications and open `http://localhost:5173`. The top workspace searches the canonical Houston-area fixture inventory. Each candidate can start one durable agent workflow. The workflow prepares the existing immutable quote request, stops at the real approval boundary, resumes only after an explicit application event, and shows persisted user-safe activity. The approval dialog still shows the exact candidate, fictitious `.example.test` recipient, subject, full body, reason, and requested-information checklist before any send. After confirmed delivery, the fixture response can be released and analyzed through the existing boundary; an incomplete assessment causes the graph to invoke the existing approval-gated follow-up service.
 
 In **Dealer response lab**, choose one of 15 raw response fixtures and select **Analyze response**. With a configured model key, the original message appears beside its typed quote extraction and deterministic assessment; evidence actions reveal exact supporting excerpts. The assessment shows comparable, transparent, and reconciled states independently, separates source-stated uncertainty from application-policy gaps, and explains reconciliation as known line items minus claimed OTD.
 
@@ -146,12 +151,14 @@ In **Dealer response lab**, choose one of 15 raw response fixtures and select **
 - Initial quote-request wording is deterministic and immutable because its economic content is fully specified by application policy.
 - Quote extraction records what the dealer stated, including explicitly sourced uncertainty; deterministic assessment separately owns identity, completeness, transparency, missing requirements, and arithmetic.
 - Human approval is required before outbound dealer communication.
+- LangGraph coordinates capabilities but never owns business policy or messaging side effects.
+- Durable waits use explicit resume and a separate SQLite checkpoint store; there is no polling worker.
 - Fixture providers will exercise the same application paths as live providers.
 - SQLite and a single application deployment are intentional for this assessment.
 
 ## Known limitations
 
-Criteria interpretation remains a fixture implementation limited to the canonical Hyundai Tucson Hybrid vocabulary. Quote analysis requires an OpenAI API key and has not yet added persistence for extracted quote records. Outbound messaging is limited to one buyer-selected candidate at a time, immutable initial drafts, fictitious contacts, and a side-effect-free fixture provider; there is no Gmail transport, draft editing, follow-up drafting, inbound response release, multi-dealer comparison or ranking, LangGraph orchestration, or event streaming.
+Criteria interpretation remains a fixture implementation limited to the canonical Hyundai Tucson Hybrid vocabulary. Quote analysis and follow-up wording require an OpenAI API key. Outbound messaging is limited to one buyer-selected dealer/vehicle workflow at a time, immutable drafts, fictitious contacts, and a side-effect-free fixture provider. The demo has one deterministic response per interaction, so a sent follow-up truthfully stops at `WAITING_FOR_EXTERNAL_RESPONSE`; it does not fabricate a second response. There is no Gmail transport, draft editing, automatic background resume, durable outbox reconciliation, multi-dealer comparison/ranking, or event streaming.
 
 Delivery is deliberately fail-closed. If the process stops after an approved provider call but before its receipt is persisted, the proposal remains `APPROVED` with delivery unconfirmed and cannot be sent again automatically. A production transport needs idempotency/reconciliation support before an operator prepares any replacement proposal, because an unconfirmed outcome may already have reached the dealer.
 

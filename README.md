@@ -83,13 +83,45 @@ structured-output only, and have no tools or side-effect authority.
 - React 19, TypeScript, Vite, TanStack Query, Vitest
 - Separate application and LangGraph checkpoint SQLite files
 
-## Prerequisites
+## Docker quick start
 
-- Python 3.12 or newer
-- Node.js 20.19 or newer and npm
-- Docker with Compose, optional
+Docker with Compose is the only host prerequisite for this path; Docker Desktop
+includes both on macOS and Windows. Host Python and Node.js are not required. From the
+repository root, copy the example environment file:
 
-## Setup
+```powershell
+Copy-Item .env.example .env
+```
+
+On macOS or Linux, use:
+
+```bash
+cp .env.example .env
+```
+
+Edit `.env`, set `OTD_OPENAI_API_KEY` for the complete live demo, and run:
+
+```console
+docker compose down
+docker compose build
+docker compose run --rm backend python -m app.demo reset
+docker compose run --rm backend python -m app.demo preflight
+docker compose up -d
+```
+
+Open `http://localhost:5173`. The API health endpoint is
+`http://localhost:8000/health`. Follow live logs with `docker compose logs -f`, and stop
+the application with `docker compose down`.
+
+Reset clears only the two demo SQLite stores in the Compose named volume; omit that
+step when preserving an existing run. Preflight verifies configuration, fixtures, and
+both stores without calling a model. Changing `VITE_API_BASE_URL` requires rebuilding
+the frontend image with `docker compose build frontend`.
+
+## Host development setup
+
+The host-based development path requires Python 3.12 or newer plus Node.js 22.12 or
+newer and npm.
 
 From the repository root, create and install the backend environment:
 
@@ -142,15 +174,8 @@ database/checkpoint usability, configuration, frontend target syntax, and model-
 presence. It never calls a model or validates the key remotely. A missing key truthfully
 means the complete live UI demo is not ready, while deterministic tests remain usable.
 
-For Docker Compose, reset and inspect the named-volume stores from the repository root
-instead of the separate host files:
-
-```powershell
-docker compose down
-docker compose build
-docker compose run --rm backend python -m app.demo reset
-docker compose run --rm backend python -m app.demo preflight
-```
+For Docker Compose, use the commands in **Docker quick start**. They reset and inspect
+the named-volume stores instead of the separate host files.
 
 ## Run
 
@@ -169,14 +194,8 @@ npm run dev
 Open `http://localhost:5173`. The API health endpoint is
 `http://localhost:8000/health`.
 
-After the Compose reset/preflight above, launch from the repository root:
-
-```powershell
-docker compose up
-```
-
 Compose stores application and checkpoint data in separate files inside one named
-volume.
+volume and waits for the backend health check before starting the frontend.
 
 ## Canonical demo
 

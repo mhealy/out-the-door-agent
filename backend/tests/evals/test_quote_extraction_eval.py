@@ -118,6 +118,10 @@ QUESTION_CONCEPT_ANCHORS = (
     frozenset({"financing"}),
     frozenset({"trade"}),
 )
+QUESTION_VEHICLE_TOKENS = frozenset({"vehicle", "vehicles"})
+QUESTION_SELECTION_TOKENS = frozenset(
+    {"select", "selected", "selection", "which"}
+)
 
 
 def _tokens(value: str) -> set[str]:
@@ -242,6 +246,13 @@ def _question_checks(
 def _question_concept_matches(actual: str, expected: str) -> bool:
     actual_tokens = _tokens(actual)
     expected_tokens = _tokens(expected)
+    if (
+        actual_tokens & QUESTION_VEHICLE_TOKENS
+        and expected_tokens & QUESTION_VEHICLE_TOKENS
+        and actual_tokens & QUESTION_SELECTION_TOKENS
+        and expected_tokens & QUESTION_SELECTION_TOKENS
+    ):
+        return True
     if any(
         anchor.issubset(actual_tokens) and anchor.issubset(expected_tokens)
         for anchor in QUESTION_CONCEPT_ANCHORS
@@ -250,6 +261,23 @@ def _question_concept_matches(actual: str, expected: str) -> bool:
     overlap = actual_tokens & expected_tokens
     shortest = min(len(actual_tokens), len(expected_tokens))
     return shortest > 0 and len(overlap) >= 2 and len(overlap) / shortest >= 0.4
+
+
+def test_question_matcher_accepts_equivalent_vehicle_selection_uncertainty() -> None:
+    expected_case = next(
+        case for case in EXPECTED_CASES if case["case_id"] == "msg-multiple-vehicles"
+    )
+    expected_question = expected_case["extraction"]["unresolved_questions"][0]
+    actual_question = (
+        "The response provides distinct terms for two vehicles, so the applicable "
+        "VIN, stock number, selling price, and OTD are ambiguous until a vehicle "
+        "is selected."
+    )
+
+    assert _question_checks([actual_question], [expected_question]) == (
+        [True],
+        [True],
+    )
 
 
 def _evidence_claim_text(

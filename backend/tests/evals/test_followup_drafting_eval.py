@@ -3,6 +3,7 @@ import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -10,8 +11,11 @@ import pytest
 from app.config import Settings
 from app.domain.followup import (
     FollowupConversationMessage,
+    FollowupDraft,
     FollowupDraftContext,
+    FollowupDraftRequest,
 )
+from app.domain.outreach_requirements import FOLLOWUP_WORDING_OPTIONS
 from app.domain.quote import QuoteAssessment
 from app.providers.followup_drafting import OpenAIFollowupDrafter
 from app.services.followups import (
@@ -95,6 +99,20 @@ def _concept_checks(
         for requirement_id, groups in expected_concepts.items()
         for alternatives in groups
     ]
+
+
+def test_eval_concept_labels_accept_every_runtime_wording_option() -> None:
+    for case in MODEL_CASES:
+        for requirement_id, groups in case["expected_concepts"].items():
+            assert requirement_id in case["missing_for_comparison"]
+            for option in FOLLOWUP_WORDING_OPTIONS[requirement_id]:
+                assert all(
+                    _concept_group_matches(option, alternatives)
+                    for alternatives in groups
+                ), (
+                    f"{case['case_id']} does not recognize valid wording "
+                    f"{option!r} for {requirement_id}"
+                )
 
 
 def _draft_text(draft: Any, validated: Any | None) -> str:
@@ -182,6 +200,7 @@ class EvalMetrics:
     concise_cases: int = 0
     safe_cases: int = 0
     target_identity_cases: int = 0
+    target_identity_total: int = 0
     no_draft_cases: int = 0
 
     def record_model_case(
@@ -214,7 +233,9 @@ class EvalMetrics:
         self.concept_total += len(concept_checks)
         self.concise_cases += concise
         self.safe_cases += safe
-        self.target_identity_cases += target_identity
+        if case.get("must_include_target_vin", False):
+            self.target_identity_cases += target_identity
+            self.target_identity_total += 1
         if all(
             (
                 validation_passed,
@@ -253,9 +274,59 @@ class EvalMetrics:
             "Concise cases: " + self._ratio(self.concise_cases, model_cases),
             "Safe/non-hostile cases: " + self._ratio(self.safe_cases, model_cases),
             "Target-identity fidelity: "
-            + self._ratio(self.target_identity_cases, model_cases),
+            + self._ratio(self.target_identity_cases, self.target_identity_total),
             f"Comparable/no-draft cases: {self.no_draft_cases}/1",
         ]
+
+
+def test_eval_metrics_count_target_identity_only_when_applicable() -> None:
+    metrics = EvalMetrics(expected_cases=3)
+    ordinary_case = next(case for case in CASES if case["case_id"] == "claimed_otd")
+    ordinary_draft = FollowupDraft(
+        subject="Written quote clarification",
+        requests=[
+            FollowupDraftRequest(
+                requirement_id="claimed_otd",
+                text="Please confirm the written out-the-door total.",
+            )
+        ],
+    )
+    metrics.record_model_case(
+        case=ordinary_case,
+        draft=ordinary_draft,
+        validated=None,
+        validation_passed=True,
+    )
+
+    identity_case = next(
+        case for case in CASES if case["case_id"] == "missing_vehicle_identity"
+    )
+    identity_draft = FollowupDraft(
+        subject="Written quote clarification",
+        requests=[
+            FollowupDraftRequest(
+                requirement_id="vehicle_identity",
+                text="Please confirm the VIN or stock number for the quoted vehicle.",
+            )
+        ],
+    )
+    metrics.record_model_case(
+        case=identity_case,
+        draft=identity_draft,
+        validated=SimpleNamespace(
+            subject=identity_draft.subject,
+            body=(
+                f"For VIN {identity_case['target_vin']}, please confirm the VIN or "
+                "stock number for the quoted vehicle."
+            ),
+        ),
+        validation_passed=True,
+    )
+    metrics.record_no_draft()
+
+    assert metrics.target_identity_cases == 1
+    assert metrics.target_identity_total == 1
+    assert "Target-identity fidelity: 1/1 (100.0%)" in metrics.report_lines()
 
 
 @pytest.fixture(scope="session")

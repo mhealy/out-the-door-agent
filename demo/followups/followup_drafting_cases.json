@@ -41,7 +41,7 @@
     "missing_for_comparison": ["mandatory_addon_amount"],
     "source_uncertainty": ["The dealer states that SecureTrack is mandatory but omits its amount."],
     "expected_concepts": {
-      "mandatory_addon_amount": [["securetrack", "add on", "dealer product", "mandatory product"], ["amount", "price", "cost", "charge"]]
+      "mandatory_addon_amount": [["securetrack", "add on", "dealer product", "mandatory product", "dealer installed product"], ["amount", "price", "cost", "charge"]]
     }
   },
   {

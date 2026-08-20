@@ -3,7 +3,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.domain.agent_run import AgentRun
+from app.domain.agent_run import AgentEventType, AgentRun
 from app.domain.comparison import ComparisonResult, ComparisonStatus
 from app.domain.vehicle import VehicleListing
 
@@ -71,6 +71,19 @@ class PurchaseChildSummary(_PurchaseModel):
     action_id: str | None = None
     creation_error_code: str | None = None
     active_unresolved: bool
+
+
+class PurchaseActivityItem(_PurchaseModel):
+    """Historical child-workflow observation; never authoritative current state."""
+
+    event_id: str
+    agent_run_id: str
+    vehicle_id: str
+    dealer_id: str | None = None
+    dealer_name: str | None = None
+    event_type: AgentEventType
+    message: str
+    occurred_at: datetime
 
 
 class PurchaseWorkspace(_PurchaseModel):

@@ -151,6 +151,13 @@ article h3 { margin: 0.25rem 0; }
   line-height: 1.35;
 }
 
+.provenance-label,
+.comparison-source-label,
+.inventory-source-link {
+  font-weight: 850;
+  letter-spacing: 0.075em;
+}
+
 .comparison-ineligible {
   width: fit-content;
   padding: 0.2rem 0.45rem;
@@ -1090,6 +1097,30 @@ button.secondary-button {
   margin: 0;
 }
 
+.demo-control {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  width: fit-content;
+  padding: 0.45rem 0.55rem;
+  border: 1px dashed #b48a35;
+  border-radius: 0.65rem;
+  background: #fff9e9;
+}
+
+.demo-control-label {
+  color: #765314;
+  font-size: 0.65rem;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  line-height: 1;
+}
+
+.demo-control button {
+  margin: 0;
+}
+
 .outreach-interaction {
   padding: 1rem;
   margin-top: 1rem;
@@ -1456,22 +1487,172 @@ label.candidate-selector {
   background: #315b40;
 }
 
-.purchase-counts {
+.purchase-decision-summary {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  gap: 0.75rem;
+  gap: 1rem;
+  padding: 1.15rem;
+  margin-top: 1.5rem;
+  border: 1px solid #8ca190;
+  border-radius: 1rem;
+  background: linear-gradient(135deg, #f9fbf7 0%, #eef5ef 100%);
+  box-shadow: 0 0.7rem 1.8rem rgb(43 74 54 / 8%);
+}
+
+.purchase-decision-summary-heading,
+.purchase-activity-heading {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.purchase-decision-summary-heading h2,
+.purchase-decision-summary-heading p,
+.purchase-activity-heading h2,
+.purchase-activity-heading p {
+  margin-bottom: 0;
+}
+
+.purchase-decision-summary-heading h2 {
+  margin-top: 0.2rem;
+  font-size: clamp(1.35rem, 3vw, 2rem);
+  letter-spacing: -0.025em;
+}
+
+.purchase-operation-progress {
+  max-width: 34rem;
+  margin-top: 0;
+  color: #526158;
+  font-size: 0.76rem;
+  line-height: 1.55;
+  text-align: right;
+}
+
+.purchase-decision-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.55rem;
   padding: 0;
-  margin: 2rem 0 0;
+  margin: 0;
   list-style: none;
 }
 
-.purchase-counts li {
-  padding: 0.9rem 1rem;
-  border: 1px solid #b9cabb;
-  border-radius: 0.75rem;
+.purchase-decision-stats li {
+  padding: 0.65rem 0.75rem;
+  border: 1px solid #c9d6ca;
+  border-radius: 0.65rem;
   background: #fff;
-  font-weight: 750;
+  font-size: 0.86rem;
+  font-weight: 800;
   line-height: 1.35;
+}
+
+.purchase-decision-callouts {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.8fr);
+  gap: 0.65rem;
+}
+
+.purchase-decision-callouts > div {
+  display: grid;
+  align-content: start;
+  gap: 0.25rem;
+  padding: 0.75rem 0.85rem;
+  border: 1px solid #b9cabb;
+  border-radius: 0.7rem;
+  background: rgb(255 255 255 / 78%);
+}
+
+.purchase-decision-callouts > .purchase-decision-callout-attention {
+  border-color: #d1ae5a;
+  background: #fff9e9;
+}
+
+.purchase-decision-callout-label {
+  color: #657269;
+  font-size: 0.64rem;
+  font-weight: 900;
+  letter-spacing: 0.1em;
+}
+
+.purchase-decision-callouts a {
+  color: #624710;
+  font-weight: 750;
+}
+
+.purchase-decision-callouts small,
+.purchase-decision-callouts > div > span:not(.purchase-decision-callout-label) {
+  color: #526158;
+}
+
+.purchase-activity {
+  padding-top: 1.5rem;
+  margin-top: 1.5rem;
+  border-top: 1px solid #b9cabb;
+}
+
+.purchase-activity-heading h2 {
+  margin-top: 0.2rem;
+  font-size: clamp(1.35rem, 3vw, 2rem);
+  letter-spacing: -0.025em;
+}
+
+.purchase-activity-heading > span {
+  color: #657269;
+  font-size: 0.75rem;
+  font-weight: 750;
+}
+
+.purchase-activity-list {
+  display: grid;
+  gap: 0.35rem;
+  padding: 0;
+  margin: 0.85rem 0 0;
+  list-style: none;
+}
+
+.purchase-activity-list li {
+  display: grid;
+  grid-template-columns: 7.5rem minmax(9rem, 0.65fr) minmax(14rem, 1.35fr);
+  align-items: baseline;
+  gap: 0.2rem 0.75rem;
+  padding: 0.65rem 0.75rem;
+  border-left: 3px solid #76a183;
+  border-radius: 0.45rem;
+  background: #f5f7f3;
+}
+
+.purchase-activity-list time {
+  color: #657269;
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.purchase-activity-event {
+  color: #315b40;
+  font-size: 0.8rem;
+  font-weight: 800;
+}
+
+.purchase-activity-list p {
+  grid-column: 3;
+  margin: 0;
+  color: #526158;
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+
+.purchase-activity-state {
+  padding: 0.75rem;
+  margin: 0.85rem 0 0;
+  border-radius: 0.55rem;
+  color: #526158;
+  background: #f5f7f3;
+  font-size: 0.84rem;
+}
+
+.purchase-activity-toggle {
+  margin-top: 0.75rem;
 }
 
 .purchase-recovery {
@@ -1617,6 +1798,7 @@ label.candidate-selector {
   .outreach-backdrop { align-items: start; padding: 1rem; }
   .outreach-dialog { max-height: calc(100vh - 2rem); }
   .outreach-dialog-heading, .outreach-actions, .followup-controls, .agent-workflow-actions { align-items: stretch; flex-direction: column; }
+  .demo-control { align-items: stretch; width: auto; flex-direction: column; }
   .outreach-dialog-heading button, .outreach-actions button { width: 100%; }
   .followup-round-status { justify-items: stretch; }
   .outreach-meta { grid-template-columns: 1fr; }
@@ -1626,4 +1808,12 @@ label.candidate-selector {
   .comparison-price-story { grid-template-columns: 1fr; }
   .candidate-grid-heading, .purchase-start, .purchase-header, .purchase-recovery { align-items: stretch; flex-direction: column; }
   .purchase-start button, .purchase-recovery button { width: 100%; }
+  .purchase-decision-summary-heading, .purchase-activity-heading { align-items: flex-start; flex-direction: column; }
+  .purchase-operation-progress { text-align: left; }
+  .purchase-decision-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .purchase-decision-callouts { grid-template-columns: 1fr; }
+  .purchase-activity-list li { grid-template-columns: 1fr auto; }
+  .purchase-activity-list li > time { grid-column: 1; grid-row: 1; }
+  .purchase-activity-list li > strong { grid-column: 2; grid-row: 1; text-align: right; }
+  .purchase-activity-event, .purchase-activity-list p { grid-column: 1 / -1; }
 }

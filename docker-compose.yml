@@ -10,8 +10,10 @@ services:
       OTD_LANGGRAPH_CHECKPOINT_PATH: /data/out_the_door_checkpoints.db
       OTD_CORS_ORIGINS: '${OTD_CORS_ORIGINS:-["http://localhost:5173"]}'
       OTD_QUOTE_EXTRACTION_MODEL: ${OTD_QUOTE_EXTRACTION_MODEL:-gpt-5.6}
+      OTD_FOLLOWUP_DRAFTING_MODEL: ${OTD_FOLLOWUP_DRAFTING_MODEL:-gpt-5.6}
       OTD_RESEARCH_SYNTHESIS_MODEL: ${OTD_RESEARCH_SYNTHESIS_MODEL:-gpt-5.6}
       OTD_OPENAI_API_KEY: ${OTD_OPENAI_API_KEY:-}
+      VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8000}
     ports:
       - "8000:8000"
     volumes:

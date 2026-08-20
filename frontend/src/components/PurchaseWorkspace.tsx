@@ -62,6 +62,15 @@ type PurchaseAttentionItem = {
   requires_buyer_action: boolean;
 };
 
+type PurchaseActivityItem = {
+  event_id: string;
+  agent_run_id: string;
+  vehicle_id: string;
+  event_type: string;
+  message: string;
+  occurred_at: string;
+};
+
 type PurchaseChild = {
   vehicle: PurchaseVehicle;
   agent_run: AgentRun | null;
@@ -124,6 +133,40 @@ const workflowLabels: Record<PurchaseWorkflowStatus, string> = {
   RUN_REJECTED: "Workflow rejected",
 };
 
+const activityLabels: Record<string, string> = {
+  RUN_STARTED: "Workflow started",
+  INITIAL_OUTREACH_PREPARED: "Quote request prepared",
+  WAITING_FOR_APPROVAL: "Exact action awaiting approval",
+  OUTREACH_SENT: "Quote request delivery confirmed",
+  FOLLOWUP_SENT: "Follow-up delivery confirmed",
+  DELIVERY_UNCONFIRMED: "Delivery unconfirmed",
+  WAITING_FOR_EXTERNAL_RESPONSE: "Waiting for dealer response",
+  WAITING_FOR_ANALYSIS: "Dealer response awaiting analysis",
+  ANALYSIS_FAILED: "Response analysis failed",
+  RESPONSE_ANALYZED: "Dealer response analyzed",
+  FOLLOWUP_PREPARED: "Clarification prepared",
+  FOLLOWUP_STALE: "Earlier clarification superseded",
+  INTERACTION_COMPLETE: "Offer verified",
+  MAX_FOLLOWUPS_REACHED: "Clarification limit reached",
+  RUN_REJECTED: "Workflow stopped",
+  RUN_FAILED: "Workflow failed",
+};
+
+const purchaseCurrencyFormatter = new Intl.NumberFormat("en-US", {
+  style: "currency",
+  currency: "USD",
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
+
+const purchaseActivityDateFormatter = new Intl.DateTimeFormat("en-US", {
+  month: "short",
+  day: "numeric",
+  hour: "numeric",
+  minute: "2-digit",
+});
+const recentActivityLimit = 8;
+
 async function apiError(response: Response, fallback: string): Promise<Error> {
   const payload = (await response.json().catch(() => null)) as ApiErrorPayload | null;
   const detail = payload?.detail;
@@ -140,6 +183,19 @@ async function inspectPurchase(
     throw await apiError(response, "The purchase workspace could not be loaded.");
   }
   return response.json() as Promise<PurchaseWorkspaceModel>;
+}
+
+async function inspectPurchaseActivity(
+  apiBaseUrl: string,
+  purchaseId: string,
+): Promise<PurchaseActivityItem[]> {
+  const response = await fetch(
+    `${apiBaseUrl}/purchase-runs/${encodeURIComponent(purchaseId)}/activity`,
+  );
+  if (!response.ok) {
+    throw await apiError(response, "Purchase activity could not be loaded.");
+  }
+  return response.json() as Promise<PurchaseActivityItem[]>;
 }
 
 async function recoverPurchase(
@@ -198,22 +254,161 @@ async function investigateResearchTarget(
   return response.json() as Promise<ResearchTargetView>;
 }
 
-function countLabels(counts: PurchaseStatusCounts): string[] {
-  return [
-    `${counts.selected_vehicles} dealers selected`,
-    `${counts.linked_children} dealer workflows linked`,
-    `${counts.quote_requests_prepared} quote requests prepared`,
-    `${counts.responses_analyzed} responses analyzed`,
-    `${counts.verified_offers} verified offers`,
-    `${counts.incomplete_offers} incomplete`,
-    `${counts.pending_approvals} pending approval${counts.pending_approvals === 1 ? "" : "s"}`,
-  ];
+function plural(count: number, singular: string, pluralForm = `${singular}s`): string {
+  return `${count} ${count === 1 ? singular : pluralForm}`;
 }
 
-function PurchaseCounts({ counts }: { counts: PurchaseStatusCounts }) {
-  return <ul aria-label="Purchase progress" className="purchase-counts">
-    {countLabels(counts).map((label) => <li key={label}>{label}</li>)}
-  </ul>;
+function formatPurchaseMoney(value: string): string {
+  const amount = Number(value);
+  return Number.isFinite(amount) ? purchaseCurrencyFormatter.format(amount) : value;
+}
+
+function formatActivityLabel(eventType: string): string {
+  return activityLabels[eventType] ?? eventType
+    .toLowerCase()
+    .replaceAll("_", " ")
+    .replace(/^./, (first) => first.toUpperCase());
+}
+
+function formatActivityDate(value: string): string {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : purchaseActivityDateFormatter.format(date);
+}
+
+function compareActivityItems(left: PurchaseActivityItem, right: PurchaseActivityItem): number {
+  const leftTime = Date.parse(left.occurred_at);
+  const rightTime = Date.parse(right.occurred_at);
+  if (Number.isFinite(leftTime) && Number.isFinite(rightTime) && leftTime !== rightTime) {
+    return leftTime - rightTime;
+  }
+  const timestampOrder = left.occurred_at.localeCompare(right.occurred_at);
+  return timestampOrder || left.event_id.localeCompare(right.event_id);
+}
+
+function PurchaseDecisionSummary({ workspace }: { workspace: PurchaseWorkspaceModel }) {
+  const buyerActions = workspace.attention_items.filter((item) => item.requires_buyer_action);
+  const firstBuyerAction = buyerActions[0] ?? null;
+  const recommendation = workspace.comparison?.recommendation ?? null;
+  const counts = workspace.counts;
+
+  return <section
+    aria-labelledby="purchase-decision-summary-heading"
+    className="purchase-decision-summary"
+  >
+    <div className="purchase-decision-summary-heading">
+      <div>
+        <p className="eyebrow">Decision snapshot</p>
+        <h2 id="purchase-decision-summary-heading">Purchase decision summary</h2>
+      </div>
+      <p className="purchase-operation-progress">
+        {plural(counts.linked_children, "workflow")} linked
+        <span aria-hidden="true"> · </span>
+        {plural(counts.quote_requests_prepared, "quote request")} prepared
+        <span aria-hidden="true"> · </span>
+        {plural(counts.responses_analyzed, "response")} analyzed
+        <span aria-hidden="true"> · </span>
+        {plural(counts.pending_approvals, "pending approval")}
+      </p>
+    </div>
+    <ul aria-label="Decision totals" className="purchase-decision-stats">
+      <li>{plural(counts.selected_vehicles, "dealer")} selected</li>
+      <li>{plural(counts.verified_offers, "verified offer")}</li>
+      <li>{plural(counts.incomplete_offers, "incomplete offer")}</li>
+      <li>{plural(buyerActions.length, "buyer action")}</li>
+    </ul>
+    <div className="purchase-decision-callouts">
+      <div className={firstBuyerAction ? "purchase-decision-callout-attention" : undefined}>
+        <span className="purchase-decision-callout-label">BUYER ACTION</span>
+        {firstBuyerAction
+          ? <>
+            <a href={`#purchase-child-${encodeURIComponent(firstBuyerAction.vehicle_id)}`}>
+              {firstBuyerAction.message}
+            </a>
+            {buyerActions.length > 1 && <small>
+              +{buyerActions.length - 1} more below
+            </small>}
+          </>
+          : <strong>No buyer action required right now.</strong>}
+      </div>
+      <div>
+        <span className="purchase-decision-callout-label">BEST VERIFIED OFFER SO FAR</span>
+        {recommendation
+          ? <>
+            <strong>{recommendation.recommended_dealer_name}</strong>
+            <span>{formatPurchaseMoney(recommendation.recommended_otd)}</span>
+          </>
+          : <>
+            <strong>No verified offer yet.</strong>
+            <span>Dealer workflows remain visible below.</span>
+          </>}
+      </div>
+    </div>
+  </section>;
+}
+
+function PurchaseActivity({
+  children,
+  error,
+  isPending,
+  items,
+}: {
+  children: PurchaseChild[];
+  error: string | null;
+  isPending: boolean;
+  items: PurchaseActivityItem[];
+}) {
+  const [showAll, setShowAll] = useState(false);
+  const dealerByVehicle = new Map(
+    children.map((child) => [child.vehicle.id, child.vehicle.dealer_name]),
+  );
+  const chronologicalItems = [...items].sort(compareActivityItems);
+  const isBounded = chronologicalItems.length > recentActivityLimit;
+  const visibleItems = showAll || !isBounded
+    ? chronologicalItems
+    : chronologicalItems.slice(-recentActivityLimit);
+
+  return <section className="purchase-activity" aria-labelledby="purchase-activity-heading">
+    <div className="purchase-activity-heading">
+      <div>
+        <p className="eyebrow">Across every selected dealer</p>
+        <h2 id="purchase-activity-heading">Purchase activity</h2>
+      </div>
+      {!!chronologicalItems.length && <span>
+        {plural(chronologicalItems.length, "event")}
+      </span>}
+    </div>
+    {isPending && <p className="purchase-activity-state" role="status">
+      Loading purchase activity…
+    </p>}
+    {error && <p
+      aria-label="Purchase activity unavailable"
+      className="purchase-activity-state"
+      role="status"
+    >
+      Purchase activity is temporarily unavailable. Current decision data remains visible.
+    </p>}
+    {!isPending && !error && !chronologicalItems.length && <p className="purchase-activity-state">
+      No dealer workflow activity has been recorded yet.
+    </p>}
+    {!!visibleItems.length && <ol aria-label="Purchase activity" className="purchase-activity-list">
+      {visibleItems.map((item) => <li key={item.event_id}>
+        <time dateTime={item.occurred_at}>{formatActivityDate(item.occurred_at)}</time>
+        <strong>{dealerByVehicle.get(item.vehicle_id) ?? "Selected dealer"}</strong>
+        <span className="purchase-activity-event">{formatActivityLabel(item.event_type)}</span>
+        <p>{item.message}</p>
+      </li>)}
+    </ol>}
+    {isBounded && <button
+      aria-expanded={showAll}
+      className="secondary-button purchase-activity-toggle"
+      onClick={() => setShowAll((current) => !current)}
+      type="button"
+    >
+      {showAll
+        ? `Show recent ${recentActivityLimit} events`
+        : `Show all ${chronologicalItems.length} events`}
+    </button>}
+  </section>;
 }
 
 function AttentionItems({ items }: { items: PurchaseAttentionItem[] }) {
@@ -230,7 +425,7 @@ function AttentionItems({ items }: { items: PurchaseAttentionItem[] }) {
           <strong>{item.dealer_name}</strong>
           <span>{workflowLabels[item.category]}</span>
         </div>
-        <p>{item.message}</p>
+        <p>{item.requires_buyer_action ? <>Next step: {item.message}</> : item.message}</p>
         {item.agent_run_id && <a href={`#purchase-child-${encodeURIComponent(item.vehicle_id)}`}>
           View dealer workflow
         </a>}
@@ -290,6 +485,13 @@ export function PurchaseWorkspace({
   const purchase = useQuery({
     queryKey,
     queryFn: () => inspectPurchase(apiBaseUrl, purchaseId),
+    retry: false,
+  });
+  const activityQueryKey = ["purchase-activity", apiBaseUrl, purchaseId] as const;
+  const activity = useQuery({
+    queryKey: activityQueryKey,
+    queryFn: () => inspectPurchaseActivity(apiBaseUrl, purchaseId),
+    enabled: purchase.isSuccess,
     retry: false,
   });
   const researchQueryKey = [
@@ -369,6 +571,7 @@ export function PurchaseWorkspace({
     mutationFn: () => recoverPurchase(apiBaseUrl, purchaseId),
     onSuccess: (recovered) => {
       queryClient.setQueryData(queryKey, recovered);
+      void activity.refetch();
     },
     retry: false,
   });
@@ -406,7 +609,7 @@ export function PurchaseWorkspace({
       </span>
     </header>
 
-    <PurchaseCounts counts={workspace.counts} />
+    <PurchaseDecisionSummary workspace={workspace} />
 
     {workspace.setup_status === "RECOVERY_REQUIRED" && <section className="purchase-recovery">
       <div>
@@ -422,6 +625,13 @@ export function PurchaseWorkspace({
       </button>
     </section>}
     {recovery.isError && <p className="error" role="alert">{recovery.error.message}</p>}
+
+    <PurchaseActivity
+      children={workspace.children}
+      error={activity.isError ? activity.error.message : null}
+      isPending={activity.isPending}
+      items={activity.data ?? []}
+    />
 
     <AttentionItems items={workspace.attention_items} />
 
@@ -450,6 +660,7 @@ export function PurchaseWorkspace({
       children={workspace.children}
       onAuthoritativeChange={() => {
         void purchase.refetch();
+        void activity.refetch();
         void researchTargets.refetch();
       }}
     />

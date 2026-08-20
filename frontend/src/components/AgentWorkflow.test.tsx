@@ -811,6 +811,9 @@ describe("AgentWorkflow", () => {
     fireEvent.click(screen.getByRole("button", { name: "Start agent workflow" }));
 
     expect(await screen.findByText("Waiting for dealer response")).toBeVisible();
+    const demoControl = screen.getByRole("group", { name: "Demo control" });
+    expect(within(demoControl).getByRole("button", { name: "Resume from latest state" }))
+      .toBeVisible();
     await Promise.resolve();
     expect(callsTo(
       fetchMock,

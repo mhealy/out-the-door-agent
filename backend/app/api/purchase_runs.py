@@ -15,7 +15,7 @@ from app.dependencies import (
     get_messaging_provider,
     get_quote_extractor,
 )
-from app.domain.purchase import PurchaseWorkspace
+from app.domain.purchase import PurchaseActivityItem, PurchaseWorkspace
 from app.persistence.db import get_session
 from app.persistence.purchases import (
     PurchaseCreationConflictError,
@@ -29,6 +29,7 @@ from app.providers.messaging import MessagingProvider
 from app.providers.quote_extraction import QuoteExtractor
 from app.services.offer_comparison import OfferComparisonService
 from app.services.outreach import CandidateNotFoundError
+from app.services.purchase_activity import PurchaseActivityService
 from app.services.purchases import (
     InvalidPurchaseSelectionError,
     PurchaseWorkspaceService,
@@ -209,6 +210,20 @@ async def inspect_purchase_run(
         raise _purchase_not_found(error) from error
     except CandidateNotFoundError as error:
         raise _candidate_not_found(error) from error
+
+
+@router.get(
+    "/{purchase_id}/activity",
+    response_model=list[PurchaseActivityItem],
+)
+def inspect_purchase_activity(
+    purchase_id: str,
+    session: Annotated[Session, Depends(get_session)],
+) -> list[PurchaseActivityItem]:
+    try:
+        return PurchaseActivityService(session).list(purchase_id)
+    except PurchaseRunNotFoundError as error:
+        raise _purchase_not_found(error) from error
 
 
 @router.post("/{purchase_id}/recover", response_model=PurchaseWorkspace)

@@ -480,8 +480,9 @@ describe("VerifiedOffersComparison", () => {
     const baytownRow = rows[0];
     const katyRow = rows[2];
     expect(within(baytownRow).getByText("$37,800.00")).toBeVisible();
-    expect(within(baytownRow).getByText(/Inventory listing.*fixture/i)).toBeVisible();
+    expect(within(baytownRow).getByText(/INVENTORY SOURCE.*fixture/i)).toBeVisible();
     expect(within(baytownRow).getByText("$40,315.00")).toBeVisible();
+    expect(within(baytownRow).getByText("DEALER EVIDENCE")).toBeVisible();
     expect(within(katyRow).getByText("$40,250.00")).toBeVisible();
     expect(within(katyRow).getByText("Incomplete")).toBeVisible();
     expect(within(katyRow).getByText("Not eligible")).toBeVisible();
@@ -514,6 +515,7 @@ describe("VerifiedOffersComparison", () => {
     }));
 
     const otdEvidence = await screen.findByRole("dialog", { name: "claimed otd" });
+    expect(within(otdEvidence).getByText("DEALER EVIDENCE")).toBeVisible();
     expect(within(otdEvidence).getByText("Your written cash OTD is $40,315."))
       .toBeVisible();
     fireEvent.click(within(otdEvidence).getByRole("button", { name: "Close" }));

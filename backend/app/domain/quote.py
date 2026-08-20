@@ -80,12 +80,3 @@ class InteractionMetrics(BaseModel):
     required_phone_call: bool
     required_store_visit: bool
     unresolved_questions: int = Field(ge=0)
-
-
-class ComparisonResult(BaseModel):
-    winner_quote_id: str
-    ranked_quote_ids: list[str]
-    savings_vs_next_best: Decimal | None = None
-    savings_vs_lowest_advertised_candidate: Decimal | None = None
-    material_tradeoffs: list[str] = Field(default_factory=list)
-    unresolved_risks: list[str] = Field(default_factory=list)

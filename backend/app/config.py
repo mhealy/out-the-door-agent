@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     app_name: str = "OutTheDoor API"
     environment: str = "development"
     database_url: str = "sqlite:///./out_the_door.db"
+    langgraph_checkpoint_path: Path = Path("./out_the_door_checkpoints.db")
     cors_origins: list[str] = ["http://localhost:5173"]
     quote_extraction_model: str = "gpt-5.6"
     followup_drafting_model: str = "gpt-5.6"

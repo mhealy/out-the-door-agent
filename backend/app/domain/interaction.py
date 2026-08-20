@@ -3,7 +3,11 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, computed_field
 
-from app.domain.approval import OutreachProposal, OutreachVehicleSnapshot
+from app.domain.approval import (
+    ActionStatus,
+    OutreachProposal,
+    OutreachVehicleSnapshot,
+)
 from app.domain.message import DealerMessage
 from app.domain.quote import QuoteAnalysisResult
 
@@ -39,6 +43,8 @@ class DealerInteraction(BaseModel):
     sent_followup_count: int = Field(default=0, ge=0, le=2)
     followup_limit: Literal[2] = 2
     latest_response_followup_status: LatestResponseFollowupStatus | None = None
+    latest_response_followup_attempt_id: str | None = None
+    latest_response_followup_attempt_status: ActionStatus | None = None
     analysis: QuoteAnalysisResult | None = None
     analysis_error_code: str | None = None
 

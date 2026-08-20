@@ -258,6 +258,8 @@ class InteractionRepository:
         analysis_status = "AWAITING_RESPONSE"
         analysis_error_code = None
         latest_response_followup_status = None
+        latest_response_followup_attempt_id = None
+        latest_response_followup_attempt_status = None
         if records:
             latest_record = records[-1]
             latest_message = messages[-1]
@@ -280,6 +282,15 @@ class InteractionRepository:
                 )
                 if blocker is not None:
                     latest_response_followup_status = blocker.status
+                latest_attempt = (
+                    outreach_repository.get_latest_source_followup_attempt(
+                        interaction.id,
+                        latest_record.id,
+                    )
+                )
+                if latest_attempt is not None:
+                    latest_response_followup_attempt_id = latest_attempt.id
+                    latest_response_followup_attempt_status = latest_attempt.status
 
         return DealerInteraction(
             id=interaction.id,
@@ -295,6 +306,12 @@ class InteractionRepository:
             followups=followups,
             sent_followup_count=sent_followup_count,
             latest_response_followup_status=latest_response_followup_status,
+            latest_response_followup_attempt_id=(
+                latest_response_followup_attempt_id
+            ),
+            latest_response_followup_attempt_status=(
+                latest_response_followup_attempt_status
+            ),
             analysis=analysis,
             analysis_error_code=analysis_error_code,
         )

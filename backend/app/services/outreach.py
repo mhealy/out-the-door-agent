@@ -124,18 +124,26 @@ class OutreachService:
         self._dealer_contact_resolver = dealer_contact_resolver
         self._messaging_provider = messaging_provider
 
-    async def prepare(self, vehicle_id: str) -> OutreachProposal:
+    async def prepare(
+        self,
+        vehicle_id: str,
+        *,
+        action_id: str | None = None,
+    ) -> OutreachProposal:
         vehicle = await self._inventory_provider.get_by_id(vehicle_id)
         if vehicle is None:
             raise CandidateNotFoundError(vehicle_id)
 
         recipient = self._dealer_contact_resolver.resolve(vehicle.dealer_id)
         action = compose_initial_quote_request(
-            action_id=str(uuid4()),
+            action_id=action_id or str(uuid4()),
             vehicle=vehicle,
             recipient=recipient,
         )
-        self._repository.create(action, vehicle)
+        if action_id is None:
+            self._repository.create(action, vehicle)
+        else:
+            self._repository.create_idempotent(action, vehicle)
         return self._get_proposal(action.id)
 
     def get(self, action_id: str) -> OutreachProposal:

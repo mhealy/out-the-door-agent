@@ -345,11 +345,13 @@ function SentFollowupHistory({ followups }: { followups: OutreachProposal[] }) {
 function FollowupControls({
   interaction,
   awaitingApproval,
+  manualPreparationEnabled,
   preparing,
   onPrepare,
 }: {
   interaction: OutreachInteraction;
   awaitingApproval: boolean;
+  manualPreparationEnabled: boolean;
   preparing: boolean;
   onPrepare: () => void;
 }) {
@@ -380,9 +382,11 @@ function FollowupControls({
           ? <span className="followup-awaiting-approval">Follow-up delivery unconfirmed</span>
         : interaction.latest_response_followup_status === "SENT"
           ? <span className="followup-awaiting-approval">Waiting for dealer response</span>
-        : <button disabled={preparing} onClick={onPrepare} type="button">
-          {preparing ? "Preparing follow-up…" : "Prepare follow-up"}
-        </button>)}
+          : manualPreparationEnabled
+            ? <button disabled={preparing} onClick={onPrepare} type="button">
+              {preparing ? "Preparing follow-up…" : "Prepare follow-up"}
+            </button>
+            : <span className="followup-awaiting-approval">Agent workflow controls the next action</span>)}
     </div>
   </section>;
 }
@@ -390,9 +394,11 @@ function FollowupControls({
 function ProposalDialog({
   proposal,
   initialProposal,
+  authorizationEnabled,
   approvalBlocked,
   decisionInFlight,
   interaction,
+  manualFollowupPreparation,
   prepareFollowupInFlight,
   releaseInFlight,
   error,
@@ -404,9 +410,11 @@ function ProposalDialog({
 }: {
   proposal: OutreachProposal;
   initialProposal: OutreachProposal;
+  authorizationEnabled: boolean;
   approvalBlocked: boolean;
   decisionInFlight: "approve" | "reject" | null;
   interaction: OutreachInteraction | null;
+  manualFollowupPreparation: boolean;
   prepareFollowupInFlight: boolean;
   releaseInFlight: boolean;
   error: string | null;
@@ -477,7 +485,9 @@ function ProposalDialog({
     >
       <div className="outreach-dialog-heading">
         <div>
-          <p className="eyebrow">Human approval required</p>
+          <p className="eyebrow">
+            {authorizationEnabled ? "Human approval required" : "Dealer interaction"}
+          </p>
           <h2 id="outreach-review-heading">
             {isFollowup ? "Review dealer follow-up" : "Review dealer quote request"}
           </h2>
@@ -493,7 +503,11 @@ function ProposalDialog({
         </button>
       </div>
 
-      <p className="outreach-approval-note">Sending requires your explicit approval.</p>
+      <p className="outreach-approval-note">
+        {authorizationEnabled
+          ? "Sending requires your explicit approval."
+          : "This workflow action is read-only in the current phase."}
+      </p>
 
       <dl className="outreach-meta">
         <div><dt>Dealer</dt><dd>{proposal.vehicle.dealer_name}</dd></div>
@@ -581,11 +595,13 @@ function ProposalDialog({
               <QuoteAnalysisResultView analysis={interaction.analysis} />
               <FollowupControls
                 awaitingApproval={
-                  isFollowup
+                  authorizationEnabled
+                  && isFollowup
                   && proposal.status === "PENDING_APPROVAL"
                   && !followupApprovalBlocked
                 }
                 interaction={interaction}
+                manualPreparationEnabled={manualFollowupPreparation}
                 onPrepare={onPrepareFollowup}
                 preparing={prepareFollowupInFlight}
               />
@@ -610,7 +626,7 @@ function ProposalDialog({
         </>}
       </section>}
 
-      {proposal.status === "PENDING_APPROVAL" && <div className="outreach-actions">
+      {authorizationEnabled && proposal.status === "PENDING_APPROVAL" && <div className="outreach-actions">
         <button
           className="secondary-button outreach-reject-button"
           disabled={isDeciding}
@@ -635,11 +651,22 @@ function ProposalDialog({
 
 export function OutreachApproval({
   apiBaseUrl,
+  authorizationEnabled = true,
   candidate,
+  controlledButtonLabel,
+  currentActionId,
+  initialActionId,
+  onAuthoritativeEvent,
 }: {
   apiBaseUrl: string;
+  authorizationEnabled?: boolean;
   candidate: OutreachCandidate;
+  controlledButtonLabel?: string;
+  currentActionId?: string | null;
+  initialActionId?: string;
+  onAuthoritativeEvent?: () => Promise<void>;
 }) {
+  const workflowControlled = initialActionId !== undefined;
   const [initialProposal, setInitialProposal] = useState<OutreachProposal | null>(null);
   const [reviewProposal, setReviewProposal] = useState<OutreachProposal | null>(null);
   const [blockedApprovalActionId, setBlockedApprovalActionId] = useState<string | null>(null);
@@ -668,8 +695,42 @@ export function OutreachApproval({
     }
   };
 
+  const loadControlledInteraction = async () => {
+    if (!initialActionId) return;
+    const actionToReview = currentActionId ?? initialActionId;
+    setIsPreparing(true);
+    setError(null);
+    try {
+      const loadedInitial = await inspectProposal(apiBaseUrl, initialActionId);
+      const loadedCurrent = actionToReview === initialActionId
+        ? loadedInitial
+        : await inspectProposal(apiBaseUrl, actionToReview);
+      setInitialProposal(loadedInitial);
+      setReviewProposal(loadedCurrent);
+      setBlockedApprovalActionId(null);
+      if (loadedInitial.status === "SENT" && loadedInitial.delivery) {
+        try {
+          setInteraction(await inspectInteraction(apiBaseUrl, initialActionId));
+        } catch {
+          setInteraction(null);
+        }
+      } else {
+        setInteraction(null);
+      }
+      setDialogOpen(true);
+    } catch (caught) {
+      setError(caught instanceof Error
+        ? caught.message
+        : "The workflow action could not be loaded.");
+    } finally {
+      setIsPreparing(false);
+    }
+  };
+
   const prepareInteractionFollowup = async () => {
     if (
+      workflowControlled
+      ||
       !initialProposal
       || !interaction
       || interaction.followup_limit_reached
@@ -694,7 +755,7 @@ export function OutreachApproval({
   };
 
   const decide = async (decision: "approve" | "reject") => {
-    if (!initialProposal || !reviewProposal) return;
+    if (!authorizationEnabled || !initialProposal || !reviewProposal) return;
     const proposalBeingReviewed = reviewProposal;
     setDecisionInFlight(decision);
     setError(null);
@@ -723,6 +784,17 @@ export function OutreachApproval({
           }
         }
       }
+      if (result.proposal && onAuthoritativeEvent) {
+        try {
+          await onAuthoritativeEvent();
+        } catch (caught) {
+          if (!nextError) {
+            nextError = caught instanceof Error
+              ? caught.message
+              : "The agent workflow could not be resumed.";
+          }
+        }
+      }
       setError(nextError);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "The approval decision could not be completed.");
@@ -735,8 +807,11 @@ export function OutreachApproval({
     if (!initialProposal || initialProposal.status !== "SENT" || !initialProposal.delivery) return;
     setReleaseInFlight(true);
     setError(null);
+    let authoritativeResponsePersisted = false;
+    let nextError: string | null = null;
     try {
       setInteraction(await releaseDemoResponse(apiBaseUrl, initialProposal.id));
+      authoritativeResponsePersisted = true;
     } catch (caught) {
       const releaseError = caught instanceof Error
         ? caught.message
@@ -744,13 +819,25 @@ export function OutreachApproval({
       try {
         const persistedInteraction = await inspectInteraction(apiBaseUrl, initialProposal.id);
         setInteraction(persistedInteraction);
-        setError(persistedInteraction.analysis_status === "ANALYZED" ? null : releaseError);
+        authoritativeResponsePersisted = persistedInteraction.messages.length > 0;
+        nextError = persistedInteraction.analysis_status === "ANALYZED" ? null : releaseError;
       } catch {
-        setError(releaseError);
+        nextError = releaseError;
       }
-    } finally {
-      setReleaseInFlight(false);
     }
+    if (authoritativeResponsePersisted && onAuthoritativeEvent) {
+      try {
+        await onAuthoritativeEvent();
+      } catch (caught) {
+        if (!nextError) {
+          nextError = caught instanceof Error
+            ? caught.message
+            : "The agent workflow could not be resumed.";
+        }
+      }
+    }
+    setError(nextError);
+    setReleaseInFlight(false);
   };
 
   const close = () => {
@@ -762,13 +849,19 @@ export function OutreachApproval({
       setDialogOpen(true);
       return;
     }
-    void prepare();
+    if (workflowControlled) {
+      void loadControlledInteraction();
+    } else {
+      void prepare();
+    }
   };
 
   return <>
     <button disabled={isPreparing} onClick={openOrPrepare} type="button">
       {isPreparing
-        ? "Preparing…"
+        ? workflowControlled ? "Loading…" : "Preparing…"
+        : workflowControlled
+          ? controlledButtonLabel ?? "Review workflow action"
         : initialProposal?.status === "SENT"
           ? "View dealer interaction"
           : initialProposal
@@ -777,11 +870,13 @@ export function OutreachApproval({
     </button>
     {error && !initialProposal && <p className="error" role="alert">{error}</p>}
     {initialProposal && reviewProposal && dialogOpen && <ProposalDialog
+      authorizationEnabled={authorizationEnabled}
       approvalBlocked={blockedApprovalActionId === reviewProposal.id}
       decisionInFlight={decisionInFlight}
       error={error}
       initialProposal={initialProposal}
       interaction={interaction}
+      manualFollowupPreparation={!workflowControlled}
       onApprove={() => decide("approve")}
       onClose={close}
       onPrepareFollowup={() => void prepareInteractionFollowup()}

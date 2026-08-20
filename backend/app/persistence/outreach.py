@@ -5,6 +5,7 @@ from uuid import uuid4
 
 from sqlalchemy import select, update
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.domain.approval import (
@@ -108,6 +109,20 @@ def _action_record(
     )
 
 
+def _vehicle_snapshot(vehicle: VehicleListing) -> OutreachVehicleSnapshot:
+    return OutreachVehicleSnapshot(
+        id=vehicle.id,
+        year=vehicle.year,
+        make=vehicle.make,
+        model=vehicle.model,
+        trim=vehicle.trim,
+        vin=vehicle.vin,
+        stock_number=vehicle.stock_number,
+        dealer_id=vehicle.dealer_id,
+        dealer_name=vehicle.dealer_name,
+    )
+
+
 class OutreachRepository:
     """Focused SQLAlchemy persistence for the outbound approval boundary."""
 
@@ -115,19 +130,34 @@ class OutreachRepository:
         self._session = session
 
     def create(self, action: ProposedAction, vehicle: VehicleListing) -> None:
-        snapshot = OutreachVehicleSnapshot(
-            id=vehicle.id,
-            year=vehicle.year,
-            make=vehicle.make,
-            model=vehicle.model,
-            trim=vehicle.trim,
-            vin=vehicle.vin,
-            stock_number=vehicle.stock_number,
-            dealer_id=vehicle.dealer_id,
-            dealer_name=vehicle.dealer_name,
-        )
+        snapshot = _vehicle_snapshot(vehicle)
         self._session.add(_action_record(action, snapshot))
         self._session.commit()
+        self._session.expire_all()
+
+    def create_idempotent(
+        self,
+        action: ProposedAction,
+        vehicle: VehicleListing,
+    ) -> None:
+        """Create a pre-identified action or verify the exact existing record."""
+
+        snapshot = _vehicle_snapshot(vehicle)
+        self._session.add(_action_record(action, snapshot))
+        try:
+            self._session.commit()
+        except IntegrityError as error:
+            self._session.rollback()
+            existing = self._session.get(ProposedActionRecord, action.id)
+            if existing is None:
+                raise error
+            if (
+                _action_from_record(existing) != action
+                or existing.vehicle_snapshot != snapshot.model_dump(mode="json")
+            ):
+                raise ValueError(
+                    "The preallocated action ID belongs to different outreach."
+                ) from error
         self._session.expire_all()
 
     def create_followup(
@@ -288,6 +318,41 @@ class OutreachRepository:
             if blocker is not None:
                 return blocker
         return None
+
+    def get_latest_source_followup_attempt(
+        self,
+        interaction_id: str,
+        source_message_id: str,
+    ) -> ProposedActionRecord | None:
+        """Return the latest persisted attempt for one authoritative source.
+
+        Unlike ``get_source_followup_blocker``, this read projection includes
+        REJECTED and SEND_FAILED so orchestration can stop without silently
+        replacing an explicit outcome. Preparation policy remains in
+        ``FollowupService`` and the transactional repository guards.
+        """
+
+        return self._session.scalar(
+            select(ProposedActionRecord)
+            .join(
+                DealerInteractionFollowupRecord,
+                DealerInteractionFollowupRecord.proposed_action_id
+                == ProposedActionRecord.id,
+            )
+            .where(
+                DealerInteractionFollowupRecord.interaction_id
+                == interaction_id,
+                DealerInteractionFollowupRecord.source_message_id
+                == source_message_id,
+                ProposedActionRecord.action_type == "SEND_FOLLOWUP",
+            )
+            .order_by(
+                ProposedActionRecord.created_at.desc(),
+                ProposedActionRecord.id.desc(),
+            )
+            .limit(1)
+            .execution_options(populate_existing=True)
+        )
 
     def followup_limit_reached(self, interaction_id: str) -> bool:
         return self.get_sent_followup_count(interaction_id) >= FOLLOWUP_LIMIT

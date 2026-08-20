@@ -32,6 +32,70 @@ class PurchaseRun(Base):
     )
 
 
+class AgentRunRecord(Base):
+    """Durable identity and current orchestration projection for one interaction."""
+
+    __tablename__ = "agent_runs"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    thread_id: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    vehicle_id: Mapped[str] = mapped_column(String(128), index=True)
+    phase: Mapped[str] = mapped_column(String(64))
+    initial_action_id: Mapped[str] = mapped_column(String(36))
+    current_action_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    interaction_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    last_message_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    error_code: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    last_event_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    last_event_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    execution_token: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    execution_claimed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+    )
+
+
+class AgentEventRecord(Base):
+    """User-safe, semantically idempotent workflow activity."""
+
+    __tablename__ = "agent_events"
+    __table_args__ = (
+        UniqueConstraint(
+            "run_id",
+            "semantic_key",
+            name="uq_agent_event_run_semantic_key",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    run_id: Mapped[str] = mapped_column(
+        ForeignKey("agent_runs.id"), index=True
+    )
+    semantic_key: Mapped[str] = mapped_column(String(512))
+    event_type: Mapped[str] = mapped_column(String(64))
+    phase: Mapped[str] = mapped_column(String(64))
+    node: Mapped[str] = mapped_column(String(64))
+    action_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    interaction_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    message_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    message: Mapped[str] = mapped_column(Text())
+    event_metadata: Mapped[dict[str, Any]] = mapped_column(
+        "metadata",
+        JSON(),
+        default=dict,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+
 class ProposedActionRecord(Base):
     __tablename__ = "proposed_actions"
 

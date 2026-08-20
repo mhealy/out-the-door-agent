@@ -216,7 +216,7 @@ def _resume(client: TestClient, run_id: str) -> dict[str, object]:
     return response.json()
 
 
-def test_canonical_demo_proves_the_complete_reviewer_story(
+def test_canonical_demo_proves_the_complete_product_story(
     canonical_smoke_harness: CanonicalSmokeHarness,
 ) -> None:
     with TestClient(app_main.app) as client:

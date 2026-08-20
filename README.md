@@ -210,7 +210,7 @@ python -m compileall -q app
 
 The default pytest configuration excludes tests marked `eval`.
 
-Run the deterministic canonical reviewer smoke:
+Run the deterministic canonical integration smoke:
 
 ```powershell
 python -m pytest tests/integration/test_canonical_demo_smoke.py -q
@@ -273,7 +273,8 @@ Future runs may vary; the command output is authoritative for the run being disc
   financing/trade optimization, authentication, payment, deposit, or purchase execution.
 - Delivery remains fail-closed. A production transport needs idempotency and
   reconciliation before retrying an unconfirmed send.
-- SQLite is appropriate for the take-home, not a claim of production scale.
+- SQLite keeps the reference implementation operationally small; it is not a claim of
+  production scale.
 
 ## Productionization
 

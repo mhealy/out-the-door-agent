@@ -801,7 +801,7 @@ describe("PurchaseWorkspace", () => {
     expect(callsTo(fetchMock, purchaseActivityUrl)).toHaveLength(1);
   });
 
-  it("bounds a long activity timeline until the reviewer asks to show every event", async () => {
+  it("bounds a long activity timeline until all events are requested", async () => {
     const longActivity = Array.from({ length: 12 }, (_, index) => ({
       ...canonicalActivity[0],
       event_id: `event-${String(index + 1).padStart(2, "0")}`,

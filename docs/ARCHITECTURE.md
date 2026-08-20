@@ -90,17 +90,18 @@ wording, and research synthesis. Normal code owns exact constraint enforcement,
 arithmetic, completeness policy, evidence validation, freshness, retry limits,
 authorization, status transitions, ranking, recommendation, and savings.
 
-The deterministic canonical smoke test replaces only those probabilistic boundaries
-with committed labeled outputs. It still exercises the real APIs, services, persistence,
-checkpoints, approval path, fixture transport, inbound path, comparison, and research
-retrieval. Live model evaluations remain separate, explicit, credentialed checks.
+The deterministic canonical smoke uses committed labeled quote outputs at extraction
+and code-defined deterministic doubles for follow-up drafting and research synthesis.
+It still exercises the real APIs, services, persistence, checkpoints, approval path,
+fixture transport, inbound path, comparison, and research retrieval. Live model
+evaluations remain separate, explicit, credentialed checks.
 
 ## Research boundary
 
 Research targets are reconstructed from the latest authoritative quote and limited to
-current material mandatory add-ons. Retrieval is fixture-backed in the take-home;
-synthesis is structured and tool-free; deterministic validation rechecks target identity,
-freshness, bounds, and source IDs before persisting a finding.
+current material mandatory add-ons. Retrieval is fixture-backed in the current
+implementation; synthesis is structured and tool-free. Deterministic validation
+rechecks target identity, freshness, bounds, and source IDs before persisting a finding.
 
 Research cannot change claimed OTD, comparability, quote assessment, ranking,
 recommendation, savings, approval, or messaging. It remains visible in its own research
@@ -108,9 +109,10 @@ surface instead of being manufactured as a graph-phase event.
 
 ## Production evolution
 
-The take-home intentionally uses one deployment, fixture providers, and two SQLite
-files. A production version could replace application and checkpoint persistence with
-logically separate PostgreSQL stores, add transport idempotency/reconciliation,
+The current reference implementation intentionally uses one deployment, fixture
+providers, and two SQLite files. A production version could replace application and
+checkpoint persistence with logically separate PostgreSQL stores, add transport
+idempotency/reconciliation,
 authentication, managed secrets, object storage, and measured telemetry. Those are
 provider and infrastructure substitutions, not reasons to move policy into LangGraph or
 models.

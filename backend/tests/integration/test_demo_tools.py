@@ -404,7 +404,7 @@ def test_preflight_reads_frontend_target_from_repository_env(
     reset_demo(settings)
     repository_env = tmp_path / ".env"
     repository_env.write_text(
-        "VITE_API_BASE_URL=https://reviewer-api.example.test\n",
+        "VITE_API_BASE_URL=https://demo-api.example.test\n",
         encoding="utf-8",
     )
     monkeypatch.delenv("VITE_API_BASE_URL", raising=False)
@@ -414,7 +414,7 @@ def test_preflight_reads_frontend_target_from_repository_env(
 
     frontend = _check_map(report)["frontend API target"]
     assert frontend.status == "PASS"
-    assert frontend.detail == "https://reviewer-api.example.test"
+    assert frontend.detail == "https://demo-api.example.test"
 
 
 def test_preflight_rejects_blank_model_names_without_hiding_usable_stores(

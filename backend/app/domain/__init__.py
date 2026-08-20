@@ -7,6 +7,15 @@ from app.domain.approval import (
     ProposedAction,
 )
 from app.domain.criteria import CriteriaExtractionResult, VehicleSearchCriteria
+from app.domain.comparison import (
+    AdvertisedVsVerified,
+    ComparedOffer,
+    ComparisonResult,
+    ComparisonStatus,
+    InventoryProvenance,
+    OfferCondition,
+    OfferRecommendation,
+)
 from app.domain.evidence import Evidence
 from app.domain.followup import (
     FollowupConversationMessage,
@@ -19,7 +28,6 @@ from app.domain.followup import (
 from app.domain.interaction import DealerInteraction
 from app.domain.message import DealerMessage, DeliveryReceipt, OutboundDealerMessage
 from app.domain.quote import (
-    ComparisonResult,
     Incentive,
     InteractionMetrics,
     MoneyItem,
@@ -31,7 +39,10 @@ from app.domain.quote import (
 from app.domain.vehicle import VehicleListing
 
 __all__ = [
+    "AdvertisedVsVerified",
+    "ComparedOffer",
     "ComparisonResult",
+    "ComparisonStatus",
     "CriteriaExtractionResult",
     "DealerInteraction",
     "DealerMessage",
@@ -44,7 +55,10 @@ __all__ = [
     "FollowupRequirement",
     "Incentive",
     "InteractionMetrics",
+    "InventoryProvenance",
     "MoneyItem",
+    "OfferCondition",
+    "OfferRecommendation",
     "OutboundDealerMessage",
     "OutreachProposal",
     "OutreachVehicleSnapshot",

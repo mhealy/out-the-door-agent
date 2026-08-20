@@ -443,7 +443,7 @@ def test_comparison_reads_analyzed_interaction_without_resuming_stale_run_projec
     comparison_client: tuple[TestClient, ComparisonHarness],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    client, _ = comparison_client
+    client, harness = comparison_client
     stale_response = client.post(
         "/agent-runs",
         json={"vehicle_id": "baytown-blue"},
@@ -470,6 +470,8 @@ def test_comparison_reads_analyzed_interaction_without_resuming_stale_run_projec
         client,
         "houston-white",
     )
+    messaging_calls_before = list(harness.messaging.calls)
+    drafting_calls_before = list(harness.drafter.calls)
 
     async def unexpected_resume(
         self: AgentWorkflowService,
@@ -495,6 +497,13 @@ def test_comparison_reads_analyzed_interaction_without_resuming_stale_run_projec
     assert baytown["analysis_status"] == "ANALYZED"
     assert baytown["claimed_otd"] == "40315"
     assert baytown["comparable"] is True
-    assert baytown["comparison_status"] == "IN_PROGRESS"
-    assert baytown["eligible"] is False
+    assert baytown["comparison_status"] == "VERIFIED"
+    assert baytown["eligible"] is True
+    assert response.json()["ranked_agent_run_ids"][0] == stale_run["id"]
+    assert (
+        response.json()["recommendation"]["recommended_agent_run_id"]
+        == stale_run["id"]
+    )
     assert client.get(f"/agent-runs/{stale_run['id']}").json() == unchanged_run
+    assert harness.messaging.calls == messaging_calls_before
+    assert harness.drafter.calls == drafting_calls_before

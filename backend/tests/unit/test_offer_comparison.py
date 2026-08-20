@@ -206,27 +206,88 @@ def test_projects_only_authoritative_facts_and_preserves_provenance() -> None:
 
 
 @pytest.mark.parametrize(
+    "phase",
+    [
+        "STARTING",
+        "WAITING_FOR_APPROVAL",
+        "WAITING_FOR_EXTERNAL_RESPONSE",
+        "WAITING_FOR_ANALYSIS",
+        "ANALYSIS_FAILED",
+        "INTERACTION_INCOMPLETE_MAX_FOLLOWUPS",
+        "INTERACTION_COMPLETE",
+    ],
+)
+def test_analyzed_comparable_quote_overrides_nonblocking_run_projection(
+    phase: RunPhase,
+) -> None:
+    offer = _offer("run-phase", otd="39000", phase=phase)
+
+    assert offer.run_phase == phase
+    assert offer.analysis_status == "ANALYZED"
+    assert offer.comparable is True
+    assert offer.claimed_otd == Decimal("39000")
+    assert offer.comparison_status == "VERIFIED"
+    assert offer.eligible is True
+
+
+@pytest.mark.parametrize(
     ("phase", "expected_status"),
     [
-        ("STARTING", "IN_PROGRESS"),
-        ("WAITING_FOR_EXTERNAL_RESPONSE", "IN_PROGRESS"),
-        ("WAITING_FOR_ANALYSIS", "IN_PROGRESS"),
-        ("ANALYSIS_FAILED", "FAILED"),
         ("DELIVERY_UNCONFIRMED", "BLOCKED"),
-        ("INTERACTION_INCOMPLETE_MAX_FOLLOWUPS", "INCOMPLETE"),
         ("RUN_REJECTED", "REJECTED"),
         ("RUN_FAILED", "FAILED"),
     ],
 )
-def test_noncomplete_run_phases_cannot_win(
+def test_explicit_blocking_and_terminal_phases_remain_ineligible(
     phase: RunPhase,
     expected_status: str,
 ) -> None:
     offer = _offer("run-phase", otd="39000", phase=phase)
 
-    assert offer.eligible is False
-    assert offer.verified_rank is None
+    assert offer.analysis_status == "ANALYZED"
+    assert offer.comparable is True
+    assert offer.claimed_otd == Decimal("39000")
     assert offer.comparison_status == expected_status
+    assert offer.eligible is False
+
+
+def test_current_interaction_analysis_failure_remains_failed() -> None:
+    offer = project_offer(
+        _run("run-analysis-failed", "WAITING_FOR_APPROVAL"),
+        _interaction("run-analysis-failed", analysis_status="ANALYSIS_FAILED"),
+        _listing("run-analysis-failed"),
+    )
+
+    assert offer.run_phase == "WAITING_FOR_APPROVAL"
+    assert offer.analysis_status == "ANALYSIS_FAILED"
+    assert offer.comparable is None
+    assert offer.claimed_otd is None
+    assert offer.comparison_status == "FAILED"
+    assert offer.eligible is False
+
+
+@pytest.mark.parametrize(
+    ("phase", "analysis_status"),
+    [
+        ("ANALYSIS_FAILED", "AWAITING_RESPONSE"),
+        ("INTERACTION_COMPLETE", "RESPONSE_RECEIVED"),
+        ("INTERACTION_INCOMPLETE_MAX_FOLLOWUPS", "ANALYSIS_IN_PROGRESS"),
+    ],
+)
+def test_current_pending_analysis_state_overrides_stale_run_projection(
+    phase: RunPhase,
+    analysis_status: str,
+) -> None:
+    offer = project_offer(
+        _run("run-current-analysis", phase),
+        _interaction("run-current-analysis", analysis_status=analysis_status),
+        _listing("run-current-analysis"),
+    )
+
+    assert offer.run_phase == phase
+    assert offer.analysis_status == analysis_status
+    assert offer.comparison_status == "IN_PROGRESS"
+    assert offer.eligible is False
 
 
 def test_incomplete_assessment_keeps_stated_otd_visible_but_unranked() -> None:

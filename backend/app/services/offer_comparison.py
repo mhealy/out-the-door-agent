@@ -4,7 +4,7 @@ from decimal import Decimal
 
 from sqlalchemy.orm import Session
 
-from app.domain.agent_run import AgentRun
+from app.domain.agent_run import AgentRun, RunPhase
 from app.domain.comparison import (
     AdvertisedVsVerified,
     ComparedOffer,
@@ -31,6 +31,13 @@ class InvalidOfferComparisonError(ValueError):
 
 class ComparisonVehicleNotFoundError(LookupError):
     """A persisted run references inventory unavailable from the provider."""
+
+
+_FAIL_CLOSED_RUN_STATUS: dict[RunPhase, ComparisonStatus] = {
+    "DELIVERY_UNCONFIRMED": "BLOCKED",
+    "RUN_REJECTED": "REJECTED",
+    "RUN_FAILED": "FAILED",
+}
 
 
 def _evidence_ids_for(
@@ -116,23 +123,24 @@ def _comparison_status(
     interaction: DealerInteraction | None,
     *,
     eligible: bool,
-    comparable: bool | None,
 ) -> ComparisonStatus:
-    if eligible:
-        return "VERIFIED"
-    if run.phase == "RUN_REJECTED":
-        return "REJECTED"
-    if run.phase in {"RUN_FAILED", "ANALYSIS_FAILED"}:
+    fail_closed_status = _FAIL_CLOSED_RUN_STATUS.get(run.phase)
+    if fail_closed_status is not None:
+        return fail_closed_status
+
+    if interaction is not None:
+        if interaction.analysis_status == "ANALYSIS_FAILED":
+            return "FAILED"
+        if interaction.analysis_status == "ANALYZED":
+            return "VERIFIED" if eligible else "INCOMPLETE"
+        return "IN_PROGRESS"
+
+    if run.phase == "ANALYSIS_FAILED":
         return "FAILED"
-    if interaction is not None and interaction.analysis_status == "ANALYSIS_FAILED":
-        return "FAILED"
-    if run.phase == "DELIVERY_UNCONFIRMED":
-        return "BLOCKED"
-    if (
-        run.phase
-        in {"INTERACTION_COMPLETE", "INTERACTION_INCOMPLETE_MAX_FOLLOWUPS"}
-        or (interaction is not None and interaction.analysis is not None and not comparable)
-    ):
+    if run.phase in {
+        "INTERACTION_COMPLETE",
+        "INTERACTION_INCOMPLETE_MAX_FOLLOWUPS",
+    }:
         return "INCOMPLETE"
     return "IN_PROGRESS"
 
@@ -154,7 +162,7 @@ def project_offer(
     claimed_otd = extraction.claimed_otd if extraction is not None else None
     comparable = assessment.comparable if assessment is not None else None
     eligible = (
-        run.phase == "INTERACTION_COMPLETE"
+        run.phase not in _FAIL_CLOSED_RUN_STATUS
         and interaction is not None
         and interaction.analysis_status == "ANALYZED"
         and comparable is True
@@ -164,7 +172,6 @@ def project_offer(
         run,
         interaction,
         eligible=eligible,
-        comparable=comparable,
     )
 
     evidence = list(analysis.evidence) if analysis is not None else []

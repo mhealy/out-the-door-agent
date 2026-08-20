@@ -290,3 +290,92 @@ class InboundDealerMessageRecord(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
+
+
+class ResearchFindingRecord(Base):
+    """One claimed/persisted research execution for an authoritative target version."""
+
+    __tablename__ = "research_findings"
+    __table_args__ = (
+        UniqueConstraint(
+            "target_id",
+            "research_version",
+            name="uq_research_finding_target_version",
+        ),
+        CheckConstraint(
+            "status in ('IN_PROGRESS', 'COMPLETED', 'FAILED')",
+            name="ck_research_finding_status",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    target_id: Mapped[str] = mapped_column(String(128), index=True)
+    purchase_run_id: Mapped[str] = mapped_column(
+        ForeignKey("purchase_runs.id"), index=True
+    )
+    agent_run_id: Mapped[str] = mapped_column(
+        ForeignKey("agent_runs.id"), index=True
+    )
+    interaction_id: Mapped[str] = mapped_column(
+        ForeignKey("dealer_interactions.id"), index=True
+    )
+    source_message_id: Mapped[str] = mapped_column(
+        ForeignKey("inbound_dealer_messages.id"), index=True
+    )
+    dealer_id: Mapped[str] = mapped_column(String(128))
+    dealer_name: Mapped[str] = mapped_column(String(300))
+    vehicle_id: Mapped[str] = mapped_column(String(128))
+    target_type: Mapped[str] = mapped_column(String(64))
+    canonical_name: Mapped[str] = mapped_column(String(300))
+    dealer_stated_amount: Mapped[str | None] = mapped_column(
+        String(128), nullable=True
+    )
+    stated_mandatory: Mapped[bool] = mapped_column(Boolean())
+    source_evidence_ids: Mapped[list[str]] = mapped_column(JSON())
+    research_version: Mapped[str] = mapped_column(String(64))
+    status: Mapped[str] = mapped_column(String(32), index=True)
+    finding_snapshot: Mapped[dict[str, Any] | None] = mapped_column(
+        JSON(), nullable=True
+    )
+    error_code: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    claim_token: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    claimed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+    )
+
+
+class ResearchSourceRecord(Base):
+    """Provider metadata and bounded material persisted without model round-tripping."""
+
+    __tablename__ = "research_sources"
+    __table_args__ = (
+        UniqueConstraint(
+            "finding_id",
+            "provider_source_id",
+            name="uq_research_source_finding_provider_id",
+        ),
+        UniqueConstraint(
+            "finding_id",
+            "position",
+            name="uq_research_source_finding_position",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    finding_id: Mapped[str] = mapped_column(
+        ForeignKey("research_findings.id"), index=True
+    )
+    provider_source_id: Mapped[str] = mapped_column(String(200))
+    position: Mapped[int] = mapped_column(Integer())
+    url: Mapped[str] = mapped_column(Text())
+    title: Mapped[str] = mapped_column(Text())
+    publisher: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    retrieved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    excerpt: Mapped[str] = mapped_column(Text())

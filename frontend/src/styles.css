@@ -182,6 +182,102 @@ article h3 { margin: 0.25rem 0; }
   color: #624710;
 }
 
+.addon-research-action {
+  display: grid;
+  gap: 0.4rem;
+  padding-top: 0.2rem;
+}
+
+button.research-investigate {
+  width: fit-content;
+  font-size: 0.76rem;
+}
+
+.addon-research {
+  display: grid;
+  gap: 0.65rem;
+  padding: 0.8rem;
+  margin-top: 0.25rem;
+  border: 1px solid #c8d6e8;
+  border-left: 4px solid #55789f;
+  border-radius: 8px;
+  color: #2f465e;
+  background: #f4f7fb;
+}
+
+.addon-research p,
+.addon-research ul {
+  margin: 0;
+}
+
+.addon-research ul {
+  padding-left: 1.1rem;
+}
+
+.addon-research-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.research-support {
+  padding: 0.18rem 0.42rem;
+  border-radius: 999px;
+  font-size: 0.66rem;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.research-support-supported {
+  color: #24553b;
+  background: #dceee3;
+}
+
+.research-support-mixed {
+  color: #6d5017;
+  background: #f7eac8;
+}
+
+.research-support-insufficient {
+  color: #5d6268;
+  background: #e5e8eb;
+}
+
+.research-sources {
+  display: grid;
+  gap: 0.35rem;
+}
+
+button.evidence-trigger.research-source-trigger {
+  border-color: #7895b5;
+  color: #355b82;
+  text-align: left;
+}
+
+.research-authority-note {
+  padding-top: 0.55rem;
+  border-top: 1px solid #d4deea;
+  color: #5b6f83;
+  font-size: 0.73rem;
+}
+
+.research-error,
+.research-load-error,
+.research-notice {
+  margin: 0.25rem 0 0;
+  color: #9b2c2c;
+  font-size: 0.76rem;
+}
+
+.research-state {
+  margin: 0.25rem 0 0;
+  color: #355b82;
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
 .comparison-status-cell {
   min-width: 7.5rem;
   color: #657269;
@@ -689,6 +785,23 @@ button.evidence-trigger[aria-pressed="true"] {
   border-color: #76a183;
   background: #f9fbf7;
   box-shadow: 0 24px 70px rgb(22 42 29 / 24%);
+}
+
+.research-source-drawer {
+  border-color: #7895b5;
+  background: #f4f7fb;
+  box-shadow: 0 24px 70px rgb(28 50 76 / 24%);
+}
+
+.research-source-drawer blockquote {
+  border-left-color: #55789f;
+}
+
+.research-source-drawer > a {
+  display: inline-block;
+  margin-top: 1rem;
+  color: #355b82;
+  font-weight: 750;
 }
 
 button.secondary-button {

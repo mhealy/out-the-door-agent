@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 
 import type { AgentRunSnapshot, RunPhase } from "./AgentWorkflow";
@@ -24,6 +24,63 @@ type MandatoryAddon = {
   amount: string | null;
   stated_mandatory: boolean | null;
   evidence_id: string;
+};
+
+export type ResearchSource = {
+  id: string;
+  url: string;
+  title: string;
+  publisher: string | null;
+  retrieved_at: string;
+  excerpt: string;
+};
+
+export type ResearchFinding = {
+  target_id: string;
+  target_name: string;
+  summary: string;
+  what_it_appears_to_include: string[];
+  limitations: string[];
+  source_ids: string[];
+  support_status: "SUPPORTED" | "MIXED" | "INSUFFICIENT";
+};
+
+export type ResearchInvestigation = {
+  id: string;
+  status: "IN_PROGRESS" | "COMPLETED" | "FAILED";
+  research_version: string;
+  finding: ResearchFinding | null;
+  sources: ResearchSource[];
+  error_code: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ResearchTargetView = {
+  target_id: string;
+  purchase_run_id: string;
+  agent_run_id: string;
+  interaction_id: string;
+  source_message_id: string;
+  dealer_id: string;
+  dealer_name: string;
+  vehicle_id: string;
+  target_type: "MANDATORY_ADDON";
+  canonical_name: string;
+  dealer_stated_amount: string | null;
+  stated_mandatory: boolean;
+  source_evidence_ids: string[];
+  recommended: boolean;
+  investigation: ResearchInvestigation | null;
+};
+
+export type OfferResearchPresentation = {
+  targets: ResearchTargetView[];
+  pendingTargetIds: string[];
+  errors: Record<string, string>;
+  notice: string | null;
+  loadError: string | null;
+  onInvestigate: (targetId: string) => void;
 };
 
 type OfferCondition = {
@@ -111,6 +168,11 @@ const currencyFormatter = new Intl.NumberFormat("en-US", {
   maximumFractionDigits: 2,
 });
 
+const sourceDateFormatter = new Intl.DateTimeFormat("en-US", {
+  dateStyle: "medium",
+  timeStyle: "short",
+});
+
 function formatMoney(value: string | null): string {
   if (value === null) return "—";
   const amount = Number(value);
@@ -173,6 +235,223 @@ function EvidenceButton({
   </button>;
 }
 
+function targetForAddon(
+  offer: ComparedOffer,
+  addon: MandatoryAddon,
+  targets: ResearchTargetView[],
+): ResearchTargetView | null {
+  const dealerEvidence = evidenceFor(offer, addon.evidence_id);
+  if (!dealerEvidence) return null;
+
+  return targets.find((target) => (
+    target.agent_run_id === offer.agent_run_id
+    && target.interaction_id === offer.interaction_id
+    && target.dealer_id === offer.dealer_id
+    && target.vehicle_id === offer.vehicle_id
+    && target.source_message_id === dealerEvidence.source_id
+    && target.source_evidence_ids.includes(addon.evidence_id)
+  )) ?? null;
+}
+
+function ResearchSourceDrawer({
+  source,
+  onClose,
+}: {
+  source: ResearchSource;
+  onClose: () => void;
+}) {
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const headingId = useId();
+
+  useEffect(() => {
+    const previouslyFocused = document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null;
+    closeButtonRef.current?.focus();
+    return () => previouslyFocused?.focus();
+  }, []);
+
+  const retrievedAt = new Date(source.retrieved_at);
+  return <aside
+    aria-labelledby={headingId}
+    className="evidence-drawer research-source-drawer"
+    onKeyDown={(event) => {
+      if (event.key === "Escape") {
+        event.stopPropagation();
+        onClose();
+      }
+    }}
+    role="dialog"
+  >
+    <div className="panel-heading">
+      <div>
+        <p className="eyebrow">Independent research source</p>
+        <h3 id={headingId}>{source.title}</h3>
+      </div>
+      <button
+        className="secondary-button"
+        onClick={onClose}
+        ref={closeButtonRef}
+        type="button"
+      >
+        Close
+      </button>
+    </div>
+    <dl className="evidence-meta">
+      <div><dt>Publisher</dt><dd>{source.publisher ?? "Publisher not provided"}</dd></div>
+      <div><dt>Retrieved</dt><dd>{Number.isNaN(retrievedAt.getTime())
+        ? source.retrieved_at
+        : sourceDateFormatter.format(retrievedAt)}</dd></div>
+    </dl>
+    <blockquote>{source.excerpt}</blockquote>
+    <a href={source.url} rel="noreferrer" target="_blank">Open source page</a>
+  </aside>;
+}
+
+function AddonResearch({
+  addon,
+  error,
+  isPending,
+  onInvestigate,
+  onSelectSource,
+  target,
+}: {
+  addon: MandatoryAddon;
+  error: string | null;
+  isPending: boolean;
+  onInvestigate: (targetId: string) => void;
+  onSelectSource: (
+    target: ResearchTargetView,
+    investigation: ResearchInvestigation,
+    source: ResearchSource,
+  ) => void;
+  target: ResearchTargetView;
+}) {
+  const investigation = target.investigation;
+
+  if (!investigation) {
+    return <div className="addon-research-action">
+      <button
+        aria-label={`Investigate ${addon.name}`}
+        className="secondary-button research-investigate"
+        disabled={isPending}
+        onClick={() => onInvestigate(target.target_id)}
+        type="button"
+      >
+        {isPending ? "Investigating…" : "Investigate"}
+      </button>
+      {error && <p className="research-error" role="alert">{error}</p>}
+    </div>;
+  }
+
+  if (investigation.status === "IN_PROGRESS") {
+    return <div className="addon-research-action">
+      <p className="research-state" role="status">
+        Independent research is in progress. The dealer quote remains unchanged.
+      </p>
+    </div>;
+  }
+
+  if (investigation.status === "FAILED") {
+    const failure = investigation.error_code
+      ? ` (${formatIdentifier(investigation.error_code)})`
+      : "";
+    const failureMessage = error ?? (
+      `Independent research failed${failure}. `
+      + "The dealer quote and comparison remain unchanged."
+    );
+    return <div className="addon-research-action">
+      <p className="research-error" role="alert">
+        {failureMessage}
+      </p>
+      {!!investigation.sources.length && <div className="research-sources">
+        <strong>Retrieved external sources</strong>
+        {investigation.sources.map((source) => <button
+          aria-label={`View research source ${source.title}`}
+          className="evidence-trigger research-source-trigger"
+          key={source.id}
+          onClick={() => onSelectSource(target, investigation, source)}
+          type="button"
+        >
+          {source.title}{source.publisher ? ` · ${source.publisher}` : ""}
+        </button>)}
+      </div>}
+      <button
+        aria-label={`Retry independent research for ${addon.name}`}
+        className="secondary-button research-investigate"
+        disabled={isPending}
+        onClick={() => onInvestigate(target.target_id)}
+        type="button"
+      >
+        {isPending ? "Retrying…" : "Retry research"}
+      </button>
+    </div>;
+  }
+
+  if (!investigation.finding) {
+    return <div className="addon-research-action">
+      <p className="research-error" role="alert">
+        Independent research completed without a usable finding. The dealer quote and
+        comparison remain unchanged.
+      </p>
+    </div>;
+  }
+
+  const finding = investigation.finding;
+  const sourcesById = new Map(
+    investigation.sources.map((source) => [source.id, source]),
+  );
+  const citedSources = finding.source_ids.flatMap((sourceId) => {
+    const source = sourcesById.get(sourceId);
+    return source ? [source] : [];
+  });
+
+  return <section
+    aria-label={`Independent research for ${addon.name}`}
+    className="addon-research"
+  >
+    <div className="addon-research-heading">
+      <strong>Independent research</strong>
+      <span className={`research-support research-support-${finding.support_status.toLowerCase()}`}>
+        {formatIdentifier(finding.support_status)}
+      </span>
+    </div>
+    <p>{finding.summary}</p>
+    {!!finding.what_it_appears_to_include.length && <div>
+      <strong>Sources describe</strong>
+      <ul>
+        {finding.what_it_appears_to_include.map((item, index) => (
+          <li key={`${index}:${item}`}>{item}</li>
+        ))}
+      </ul>
+    </div>}
+    {!!finding.limitations.length && <div>
+      <strong>Limitations</strong>
+      <ul>
+        {finding.limitations.map((item, index) => (
+          <li key={`${index}:${item}`}>{item}</li>
+        ))}
+      </ul>
+    </div>}
+    {!!citedSources.length && <div className="research-sources">
+      <strong>External sources</strong>
+      {citedSources.map((source) => <button
+        aria-label={`View research source ${source.title}`}
+        className="evidence-trigger research-source-trigger"
+        key={source.id}
+        onClick={() => onSelectSource(target, investigation, source)}
+        type="button"
+      >
+        {source.title}{source.publisher ? ` · ${source.publisher}` : ""}
+      </button>)}
+    </div>}
+    <p className="research-authority-note">
+      External research provides context about the named product. The dealer response
+      remains authoritative for the quoted amount and mandatory status.
+    </p>
+  </section>;
+}
+
 function AdvertisedPrice({ offer }: { offer: ComparedOffer }) {
   const provenance = offer.inventory_provenance;
   return <div className="comparison-money-cell">
@@ -215,9 +494,17 @@ function WrittenOtd({
 function OfferTerms({
   offer,
   onSelectEvidence,
+  onSelectResearchSource,
+  research,
 }: {
   offer: ComparedOffer;
   onSelectEvidence: (evidence: Evidence) => void;
+  onSelectResearchSource: (
+    target: ResearchTargetView,
+    investigation: ResearchInvestigation,
+    source: ResearchSource,
+  ) => void;
+  research?: OfferResearchPresentation;
 }) {
   const noAddonsEvidence = offer.evidence.find(
     (evidence) => evidence.field_name === "explicit_no_addons_statement",
@@ -234,17 +521,31 @@ function OfferTerms({
         />
       </div>
       : <span className="muted">No verified mandatory-add-on conclusion</span>)}
-    {offer.mandatory_addons.map((addon) => <div
-      className="comparison-term"
-      key={`${offer.agent_run_id}:${addon.evidence_id}:${addon.name}`}
-    >
-      <span><strong>{addon.name}</strong> · {formatMoney(addon.amount)}</span>
-      <EvidenceButton
-        evidence={evidenceFor(offer, addon.evidence_id)}
-        label={`View ${addon.name} evidence`}
-        onSelect={onSelectEvidence}
-      />
-    </div>)}
+    {offer.mandatory_addons.map((addon) => {
+      const target = research
+        ? targetForAddon(offer, addon, research.targets)
+        : null;
+      return <div
+        className="comparison-term"
+        key={`${offer.agent_run_id}:${addon.evidence_id}:${addon.name}`}
+      >
+        <span><strong>{addon.name}</strong> · {formatMoney(addon.amount)}</span>
+        <span className="comparison-source-label">Dealer says mandatory</span>
+        <EvidenceButton
+          evidence={evidenceFor(offer, addon.evidence_id)}
+          label={`View ${addon.name} evidence`}
+          onSelect={onSelectEvidence}
+        />
+        {target && research && <AddonResearch
+          addon={addon}
+          error={research.errors[target.target_id] ?? null}
+          isPending={research.pendingTargetIds.includes(target.target_id)}
+          onInvestigate={research.onInvestigate}
+          onSelectSource={onSelectResearchSource}
+          target={target}
+        />}
+      </div>;
+    })}
     {offer.conditions.map((condition, conditionIndex) => <div
       className="comparison-term comparison-condition"
       key={`${offer.agent_run_id}:condition:${conditionIndex}`}
@@ -348,16 +649,23 @@ function VerifiedOffersPresentation({
   error,
   isPending,
   recommendationHeading,
+  research,
   result,
 }: {
   error?: string;
   isPending?: boolean;
   recommendationHeading: string;
+  research?: OfferResearchPresentation;
   result?: OfferComparisonResult;
 }) {
   const [selectedEvidence, setSelectedEvidence] = useState<{
     agentRunId: string;
     evidenceId: string;
+    sourceId: string;
+  } | null>(null);
+  const [selectedResearchSource, setSelectedResearchSource] = useState<{
+    targetId: string;
+    investigationId: string;
     sourceId: string;
   } | null>(null);
   const selectedOffer = selectedEvidence && result
@@ -373,11 +681,30 @@ function VerifiedOffersPresentation({
       ),
     ) ?? null
     : null;
+  const currentResearchTarget = selectedResearchSource && research
+    ? research.targets.find(
+      (target) => target.target_id === selectedResearchSource.targetId,
+    ) ?? null
+    : null;
+  const currentResearchInvestigation = selectedResearchSource
+    && currentResearchTarget?.investigation?.id === selectedResearchSource.investigationId
+    ? currentResearchTarget.investigation
+    : null;
+  const currentResearchSource = selectedResearchSource && currentResearchInvestigation
+    ? currentResearchInvestigation.sources.find(
+      (source) => source.id === selectedResearchSource.sourceId,
+    ) ?? null
+    : null;
   useEffect(() => {
     if (selectedEvidence && result && !currentEvidence) {
       setSelectedEvidence(null);
     }
   }, [currentEvidence, result, selectedEvidence]);
+  useEffect(() => {
+    if (selectedResearchSource && !currentResearchSource) {
+      setSelectedResearchSource(null);
+    }
+  }, [currentResearchSource, selectedResearchSource]);
 
   return <section className="verified-offers" aria-labelledby="verified-offers-heading">
     <p className="eyebrow">Cross-dealer decision</p>
@@ -391,6 +718,12 @@ function VerifiedOffersPresentation({
     </p>}
     {error && <p className="error" role="alert">
       {error}
+    </p>}
+    {research?.loadError && <p className="error research-load-error" role="alert">
+      {research.loadError}
+    </p>}
+    {research?.notice && <p className="error research-notice" role="alert">
+      {research.notice}
     </p>}
 
     {result && <>
@@ -429,6 +762,14 @@ function VerifiedOffersPresentation({
                   evidenceId: evidence.id,
                   sourceId: evidence.source_id,
                 })}
+                onSelectResearchSource={(target, investigation, source) => (
+                  setSelectedResearchSource({
+                    targetId: target.target_id,
+                    investigationId: investigation.id,
+                    sourceId: source.id,
+                  })
+                )}
+                research={research}
               /></td>
               <td><OfferStatus offer={offer} /></td>
               <td>{offer.sent_followup_count ?? 0}</td>
@@ -447,18 +788,26 @@ function VerifiedOffersPresentation({
       key={`${selectedEvidence?.agentRunId}:${currentEvidence.source_id}:${currentEvidence.id}`}
       onClose={() => setSelectedEvidence(null)}
     />}
+    {currentResearchSource && <ResearchSourceDrawer
+      key={`${selectedResearchSource?.targetId}:${selectedResearchSource?.investigationId}:${currentResearchSource.id}`}
+      onClose={() => setSelectedResearchSource(null)}
+      source={currentResearchSource}
+    />}
   </section>;
 }
 
 export function VerifiedOffersComparisonView({
   recommendationHeading = "Best verified offer",
+  research,
   result,
 }: {
   recommendationHeading?: string;
+  research?: OfferResearchPresentation;
   result: OfferComparisonResult;
 }) {
   return <VerifiedOffersPresentation
     recommendationHeading={recommendationHeading}
+    research={research}
     result={result}
   />;
 }

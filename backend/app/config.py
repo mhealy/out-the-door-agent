@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     cors_origins: list[str] = ["http://localhost:5173"]
     quote_extraction_model: str = "gpt-5.6"
     followup_drafting_model: str = "gpt-5.6"
+    research_synthesis_model: str = "gpt-5.6"
     openai_api_key: SecretStr | None = None
 
 

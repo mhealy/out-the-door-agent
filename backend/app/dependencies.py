@@ -22,12 +22,19 @@ from app.providers.quote_extraction import (
     QuoteExtractor,
     UnavailableQuoteExtractor,
 )
+from app.providers.research import FixtureResearchProvider, ResearchProvider
+from app.providers.research_synthesis import (
+    OpenAIResearchSynthesizer,
+    ResearchSynthesizer,
+    UnavailableResearchSynthesizer,
+)
 
 _criteria_interpreter = FixtureCriteriaInterpreter()
 _inventory_provider = FixtureInventoryProvider()
 _dealer_message_provider = FixtureDealerMessageProvider()
 _dealer_contact_resolver = FixtureDealerContactResolver()
 _messaging_provider = FixtureMessagingProvider()
+_research_provider = FixtureResearchProvider()
 
 
 def get_criteria_interpreter() -> CriteriaInterpreter:
@@ -48,6 +55,10 @@ def get_dealer_contact_resolver() -> DealerContactResolver:
 
 def get_messaging_provider() -> MessagingProvider:
     return _messaging_provider
+
+
+def get_research_provider() -> ResearchProvider:
+    return _research_provider
 
 
 @lru_cache
@@ -75,4 +86,20 @@ def get_followup_drafter() -> FollowupDrafter:
     return OpenAIFollowupDrafter.from_api_key(
         api_key=settings.openai_api_key.get_secret_value(),
         model=settings.followup_drafting_model,
+    )
+
+
+@lru_cache
+def get_research_synthesizer() -> ResearchSynthesizer:
+    settings = get_settings()
+    if (
+        settings.openai_api_key is None
+        or not settings.openai_api_key.get_secret_value().strip()
+    ):
+        return UnavailableResearchSynthesizer(
+            "OTD_OPENAI_API_KEY is not configured."
+        )
+    return OpenAIResearchSynthesizer.from_api_key(
+        api_key=settings.openai_api_key.get_secret_value(),
+        model=settings.research_synthesis_model,
     )
